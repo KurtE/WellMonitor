@@ -1,0 +1,126 @@
+#include <Arduino.h>
+#include "CurrentSensor.h"
+#include "globals.h"
+#include <TimeLib.h>
+
+
+//==========================================================================
+// Sensor global objects
+//==========================================================================
+CurrentSensor Sensor1(SENSOR1_PIN);
+CurrentSensor Sensor2(SENSOR2_PIN);
+CurrentSensor Sensor3(SENSOR3_PIN);
+CurrentSensor Sensor4(SENSOR4_PIN);
+
+CurrentSensor *g_Sensors[] = {&Sensor1, &Sensor2, &Sensor3, &Sensor4};
+const uint8_t CNT_SENSORS =  (sizeof(g_Sensors)/sizeof(g_Sensors[0]));
+
+//==========================================================================
+// Init
+//==========================================================================
+void CurrentSensor::init(void)
+{
+  uint32_t sum = 0;
+  uint16_t min_sample = 0xffff;
+  uint16_t max_sample = 0x0;
+  uint16_t count_samples = 0;
+  uint16_t val = analogRead(_pin);
+
+  _cycle_elapsed_time = 0;
+
+  // Initialize the state of some of the different members
+  _min_on_value = MIN_CURRENT_ON;
+  _state = SENSOR_STATE_OFF;
+
+  while (_cycle_elapsed_time < 250) {
+    val = analogRead(_pin);
+    sum += val;
+    if (val < min_sample) min_sample = val;
+    if (val > max_sample) max_sample = val;
+    count_samples++;
+  }
+  _avgOffvalue = sum / count_samples;
+  _deadband = max(_avgOffvalue - min_sample, max_sample - _avgOffvalue) +  DEADBAND_FUDGE;
+  Serial.printf("Pin: %d Sum: %u, Count: %d, Avg: %u, Min: %d, Max: %u, Deadband: %d\n", _pin, sum, count_samples, _avgOffvalue, min_sample, max_sample, _deadband);
+
+  _cur_value = 0;
+  resetCounters();
+}
+
+//==========================================================================
+// state - set the state to some new state.
+//==========================================================================
+void CurrentSensor::state(uint8_t s)
+{
+  if (_state != s) {
+    _state = s;  // save away the new state;
+    Serial.printf("Pin: %d Set State %d\n", _pin, s);
+    if (_state) {
+      // We are logically turning on so init some of the counters and the like.
+      _on_time = now();
+      _min_value = _cur_value;
+      _max_value = _cur_value;
+      _sum_values = _cur_value;
+      _cnt_values = 1;
+    }
+  }
+}
+
+
+//==========================================================================
+// resetCounters
+//==========================================================================
+void CurrentSensor::resetCounters()                    // Update - do analogRead - return 1 if cycle time completed
+{
+  _cycle_elapsed_time = 0;
+  _cycle_elapsed_time = 0;
+  _cycle_sum_deltas_sq = 0;
+  _cycle_count_reads = 0;
+}
+
+//==========================================================================
+// Update
+//==========================================================================
+SensorUpdateState CurrentSensor::update(void)                    // Update - do analogRead - return 1 if cycle time completed
+{
+  if (_cycle_elapsed_time > CYCLE_INTERVAL_TIME) {
+    SensorUpdateState return_value = SENSOR_UPDATE_DONE_SAME_VALUE;
+    if (_cycle_count_reads) {
+      uint32_t dt_avg = sqrt(_cycle_sum_deltas_sq / _cycle_count_reads);
+      resetCounters();
+      if (dt_avg != _cur_value) {
+        _cur_value = dt_avg;
+        //Serial.printf("%d: %d\n", _pin, _cur_value);
+        return_value = SENSOR_UPDATE_DONE_NEW_VALUE;
+      }
+      if (_cur_value >= _min_on_value) {
+        if (!_state) {
+          state(SENSOR_STATE_ON);   // turn the state on
+          return_value = SENSOR_UPDATE_ON_DETECTED;
+        } else {
+          if (_cur_value > _max_value)
+            _max_value = _cur_value;
+          if (_cur_value < _min_value)
+            _min_value = _cur_value;
+          _sum_values += _cur_value;
+          _cnt_values++;
+        }
+      } else {
+        if (_state) {
+          state(SENSOR_STATE_OFF);
+          return_value = SENSOR_UPDATE_OFF_DETECTED;
+        }
+      }
+    }
+    return return_value; // let them know we went through a cycle
+  }
+  else
+  {
+    int cur_value =  analogRead(_pin);
+    int delta_from_center = cur_value - _avgOffvalue;
+    _cycle_sum_deltas_sq += delta_from_center * delta_from_center;
+    _cycle_count_reads++;
+  }
+  return SENSOR_UPDATE_SAMPLING;
+}
+
