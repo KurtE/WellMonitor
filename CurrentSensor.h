@@ -36,19 +36,30 @@ public:
   // Constructor
   CurrentSensor(uint8_t analog_pin) {_pin = analog_pin; };
 
+  static void initSensors(void);            // Move all of our init stuff into member function here. 
+
   // Init function
-  void      init(void);                       // Our Initialize function
+  void      init(uint16_t avg_off, uint16_t db);                       // Our Initialize function
   SensorUpdateState   update(void);                     // Update - do analogRead - return 1 if cycle time completed
   uint32_t  curValue(void) {return _cur_value; };                // return the current value
   void      resetCounters(void);              // Reset our counters. 
   void      minOnValue(uint32_t val) {_min_on_value = val; }
   uint32_t  minOnValue() {return _min_on_value; }
 
+  // values to save and restore on boot
+  uint16_t  avgOffValue() {return _avgOffvalue;}
+  void      avgOffValue(uint16_t val) {_avgOffvalue = val;}
+  uint16_t  deadband() {return _deadband;}
+  void      deadband(uint16_t val) {_deadband = val;}
+
   uint8_t   state() {return _state; };                            // What state are we in
   void      state(uint8_t s);                  // Will normally be called internal, but may want to call at init   
   uint8_t   previousState() {return _previous_state; }
   void      previousState(uint8_t ps) {_previous_state = ps;}
-  time_t    onTime(void) {return _on_time;}   // Return the time the system turned on.
+  time_t    onTime(void) {return _on_time;}     // Return the time the sensor turned on.
+  void      onTime(time_t t) {_on_time = t;}     // Set the time - internal plus maybe init
+  time_t    offTime(void) {return _off_time;}   // Return the time the sensor turned off.
+  void      offTime(time_t t) {_off_time = t;}   // Internal plus maybe init.
   uint32_t  minValue(void) {return _min_value;} 
   uint32_t  maxValue(void) {return _max_value;}
   uint32_t  avgValue(void) {return _sum_values/_cnt_values;}                   
@@ -69,6 +80,7 @@ private:
 
   // Values updated while in on state. 
   time_t        _on_time;                   // What time did we turn on. 
+  time_t        _off_time;                  // What was the last time it turned off
   uint32_t      _min_value;                 // what was the minimum on value
   uint32_t      _max_value;                 // What is the maximum on value;
   uint32_t      _sum_values;                // sum of the values while on, 
@@ -80,7 +92,7 @@ private:
 // Global Sensor objects
 //====================================================================================
 extern CurrentSensor *g_Sensors[];
-extern const uint8_t CNT_SENSORS;
+extern const uint8_t g_sensors_cnt;
 
 #endif
 

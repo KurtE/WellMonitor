@@ -4,6 +4,7 @@
 //====================================================================================
 // Include files
 //====================================================================================
+#include <Arduino.h>
 #include "globals.h"
 #include "display.h"
 #include <TimeLib.h>
@@ -161,7 +162,7 @@ void UpdateSensorData(uint8_t iSensor, SensorUpdateState update_state) {
         tft.setFont(Arial_14);
         tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
         tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
-        time_t t = now();
+        time_t t = g_Sensors[iSensor]->offTime();
         tft.printf("OFF %d/%d/%d %d:%02d  ", month(t), day(t), year(t)%100, hour(t), minute(t));
       }
       break;

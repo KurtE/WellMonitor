@@ -1,5 +1,8 @@
+#include <EEPROM.h>
+#include <Arduino.h>
 #include "globals.h"
 #include "Display.h"
+#include <SPIN.h>
 #include <ILI9341_t3n.h>
 #include <ili9341_t3n_font_Arial.h>
 #include <ili9341_t3n_font_ArialBold.h>
@@ -77,15 +80,7 @@ void setup() {
   } else {
     Serial.println("RTC has set the system time");
   }
-  Serial.println("Start Analog test");
 
-  // Setup your Analog settings should match your main program
-  analogReadResolution(11); // 11-bit resolution 0 to 2047
-  analogReadAveraging(4); // 4,8,16, or 32 samples.
-
-  if (! sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
-    Serial.println("Couldn't find SHT31");
-  }
 
   // Init the radio on the board - probably move to own function later
   SPI1.setMISO(RFM95_MISO);
@@ -100,12 +95,16 @@ void setup() {
       rf95.setTxPower(23, false);
   }
 
+  // Setup your Analog settings
+  analogReadResolution(11); // 11-bit resolution 0 to 2047
+  analogReadAveraging(4); // 4,8,16, or 32 samples.
 
-
-
-  for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
-    g_Sensors[iSensor]->init();
+  if (! sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
+    Serial.println("Couldn't find SHT31");
   }
+
+  CurrentSensor::initSensors();
+
 }
 
 
@@ -131,7 +130,7 @@ void loop() {
 
 
     cur_sensor_index++;
-    if (cur_sensor_index == CNT_SENSORS) cur_sensor_index = 0;
+    if (cur_sensor_index == g_sensors_cnt) cur_sensor_index = 0;
     g_Sensors[cur_sensor_index]->resetCounters(); // reset the counters for this item
   }
 }

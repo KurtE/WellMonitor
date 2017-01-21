@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <EEPROM.h>
 #include "CurrentSensor.h"
 #include "globals.h"
 #include <TimeLib.h>
@@ -13,12 +14,87 @@ CurrentSensor Sensor3(SENSOR3_PIN);
 CurrentSensor Sensor4(SENSOR4_PIN);
 
 CurrentSensor *g_Sensors[] = {&Sensor1, &Sensor2, &Sensor3, &Sensor4};
-const uint8_t CNT_SENSORS =  (sizeof(g_Sensors)/sizeof(g_Sensors[0]));
+#define CNT_SENSORS (sizeof(g_Sensors)/sizeof(g_Sensors[0]))
+const uint8_t g_sensors_cnt = CNT_SENSORS;
+
+typedef struct _well_monitor_eeprom_data {
+  uint8_t version_data;   // what is our data version data
+  uint8_t checksum;       // what is the checksum for the data. 
+  // Sensor Data
+  uint16_t    avgOffvalues[CNT_SENSORS];                  // What is the average off value should be near res/2
+  uint16_t    deadbands[CNT_SENSORS];                      // what we think the deadband is 
+} WELL_MONITOR_EEPROM_DATA;
+
+
+//==========================================================================
+// Static - Class level methods 
+//==========================================================================
+void CurrentSensor::initSensors(void) 
+{
+  // EEPROM data. - Maybe multiple sections 
+  // Beginning have some default settings for Avg off and deadband.
+  // May have another section which keeps last on/off times. 
+  WELL_MONITOR_EEPROM_DATA wmee; 
+
+  EEPROM.get(EEPROM_SENSOR_INFO, wmee);
+
+  uint8_t checksum = 0;
+  uint8_t *pt = ((uint8_t *)&wmee) + 2; 
+  uint8_t cb = sizeof(wmee) -2;  // don't checksum the 
+
+  while (cb--) {
+    checksum += *pt++;
+  }
+
+  Serial.println("Initialize Sensors");
+  if ((wmee.version_data != EEPROM_SENSOR_VERSION) || (wmee.checksum != checksum)) {
+    Serial.println("EEPROM Sensor init data invalid");
+    // Data is not valid... init to something
+    for (uint8_t i=0; i < CNT_SENSORS; i++) {
+      wmee.avgOffvalues[i] = 0xffff;
+      wmee.deadbands[i] = 0;
+    }
+  }
+
+  uint8_t data_changed = false; 
+
+  for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
+    g_Sensors[iSensor]->init(wmee.avgOffvalues[iSensor], wmee.deadbands[iSensor]);
+
+    // See if the data changed - Maybe should add fudge factor here?
+    if (g_Sensors[iSensor]->avgOffValue() != wmee.avgOffvalues[iSensor]) {
+      wmee.avgOffvalues[iSensor] = g_Sensors[iSensor]->avgOffValue();
+      data_changed  = true;
+    } 
+    if (g_Sensors[iSensor]->deadband() != wmee.deadbands[iSensor]) {
+      wmee.deadbands[iSensor] = g_Sensors[iSensor]->deadband();
+      data_changed  = true;
+    }
+  }
+
+  // If data changed save it back to eeprom;
+  if (data_changed) {
+    wmee.checksum = 0;
+    pt = ((uint8_t *)&wmee) + 2; 
+    cb = sizeof(wmee) -2;  // don't checksum the 
+
+    while (cb--) {
+      wmee.checksum += *pt++;
+    }
+
+    wmee.version_data = EEPROM_SENSOR_VERSION;  
+    EEPROM.put(EEPROM_SENSOR_INFO, wmee);
+    Serial.println("EEPROM Sensor init data Updated");
+  }
+
+
+
+}
 
 //==========================================================================
 // Init
 //==========================================================================
-void CurrentSensor::init(void)
+void CurrentSensor::init(uint16_t avg_off, uint16_t db)
 {
   uint32_t sum = 0;
   uint16_t min_sample = 0xffff;
@@ -41,7 +117,19 @@ void CurrentSensor::init(void)
   }
   _avgOffvalue = sum / count_samples;
   _deadband = max(_avgOffvalue - min_sample, max_sample - _avgOffvalue) +  DEADBAND_FUDGE;
-  Serial.printf("Pin: %d Sum: %u, Count: %d, Avg: %u, Min: %d, Max: %u, Deadband: %d\n", _pin, sum, count_samples, _avgOffvalue, min_sample, max_sample, _deadband);
+
+  // Lets do a quick check to see if these values look valid, if not use saved values... 
+
+  Serial.printf("Pin: %d Sum: %u, Count: %d, Avg: %u(%u), Min: %d, Max: %u, Deadband: %d(%d)\n", _pin, sum, 
+      count_samples, _avgOffvalue, avg_off, min_sample, max_sample, _deadband, db);
+
+  if (avg_off != 0xffff) {
+    if ((abs(_avgOffvalue - avg_off) > 5) || (abs(_deadband - db) > 5)) {
+      Serial.printf("Pin: %d - Power maybe on use saved settings", _pin);
+      _avgOffvalue = avg_off;
+      _deadband = db; 
+    }
+  }
 
   _cur_value = 0;
   resetCounters();
@@ -57,12 +145,15 @@ void CurrentSensor::state(uint8_t s)
     Serial.printf("Pin: %d Set State %d\n", _pin, s);
     if (_state) {
       // We are logically turning on so init some of the counters and the like.
-      _on_time = now();
+      onTime(now());
       _min_value = _cur_value;
       _max_value = _cur_value;
       _sum_values = _cur_value;
       _cnt_values = 1;
+    } else {
+      offTime(now());
     }
+
   }
 }
 
