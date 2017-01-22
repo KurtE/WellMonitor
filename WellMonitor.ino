@@ -16,6 +16,7 @@
 #include <RHHardwareSPI1.h>
 
 #include <elapsedMillis.h>
+#include <IntervalTimer.h>
 #include <TimeLib.h>
 
 #include "CurrentSensor.h"
@@ -23,9 +24,7 @@
 #define MIN_DELTA_TO_REPORT 2
 int last_val = -332767;    // setup to some value that we wont ever see
 
-uint8_t cur_sensor_index = 0;
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
-Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
 
 // MISO 5, MOSI 21 SCK 20
 #define RF95_FREQ 915.0
@@ -35,6 +34,13 @@ Adafruit_SHT31 sht31 = Adafruit_SHT31();
 // SPI1 Miso=D5, Mosi=21, sck=20, CS=31
 RH_RF95 rf95(RFM95_CS, RFM95_INT, hardware_spi1);
 uint8_t master_node;
+elapsedMillis time_to_update_time_temp;
+
+uint8_t cur_sensor_index = 0;
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
+Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
+bool sht31_detected = false;   // Does this unit have an sht31? 
 
 
 //====================================================================================
@@ -46,7 +52,7 @@ void setup() {
   // Use an IO pin to signal if we are the master or slave.
   pinMode(MASTER_SLAVE, INPUT_PULLDOWN);  // Now using PD as 3.3v next pin over
 
-  
+
   while (!Serial && (millis() < 5000)) ;
   Serial.begin(115200);
   strip.begin();
@@ -64,7 +70,7 @@ void setup() {
   strip.setPixelColor(0, strip.Color(0, 0, 0));
   strip.show();
 
-  master_node = digitalRead(MASTER_SLAVE)? 0 : 1;  
+  master_node = digitalRead(MASTER_SLAVE) ? 0 : 1;
 
   if (master_node) {
     Serial.println("Master Node");
@@ -99,10 +105,22 @@ void setup() {
   analogReadResolution(11); // 11-bit resolution 0 to 2047
   analogReadAveraging(4); // 4,8,16, or 32 samples.
 
-  if (! sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
-    Serial.println("Couldn't find SHT31");
+  // Hack lets see if we can detect if we have external PU on the SCL/SDA pins
+  // If not then sht32 may not be installed ans Wire library may hang...
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  if (digitalRead(A4) && digitalRead(A5)) {
+    if (sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
+      sht31_detected = true;   // Does this unit have an sht31? 
+    } else {
+      Serial.println("Couldn't find SHT31");
+    }
+
+  } else {
+    Serial.println("SHT31 - Not detected");
   }
 
+  Serial.println("Before Init Sensors");
   CurrentSensor::initSensors();
 
 }
@@ -113,25 +131,26 @@ void setup() {
 //====================================================================================
 void loop() {
 
-  // Lets try round robin, such that we read one whole count ..
-  SensorUpdateState sensor_updated = g_Sensors[cur_sensor_index]->update();
-  // We only want to update things when one of our current sensors has finished sampling. 
-  if (sensor_updated != SENSOR_UPDATE_SAMPLING) {
-    if (sensor_updated != SENSOR_UPDATE_DONE_SAME_VALUE) {
-      Serial.printf("%d: %d %d: ", cur_sensor_index, g_Sensors[cur_sensor_index]->curValue(), sensor_updated);
-      digitalClockDisplay();
+  // We now have the Interval timer doing most of the sensor work.
+  // We simple look for it to signal us.
+  uint32_t sensors_changed = CurrentSensor::any_sensor_changed;
+  if (sensors_changed) {
+    CurrentSensor::any_sensor_changed = 0;  // clear it out
+
+    // update the displayed data.
+    for (uint8_t sensor_index = 0; sensor_index < g_sensors_cnt; sensor_index++) {
+      uint8_t sensor_updated = (sensors_changed >> 24) & 0xff;
+      UpdateDisplaySensorData(sensor_index, sensor_updated);
+      sensors_changed <<= 8;  // Should rework the order
     }
-    UpdateSensorData(cur_sensor_index, sensor_updated);
-    
-    // Lets get the current Temp and humidity...
+
+  }
+
+  if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
     UpdateDisplayTempHumidy();
     UpdateDisplayDateTime();
 
-
-
-    cur_sensor_index++;
-    if (cur_sensor_index == g_sensors_cnt) cur_sensor_index = 0;
-    g_Sensors[cur_sensor_index]->resetCounters(); // reset the counters for this item
+    time_to_update_time_temp = 0;
   }
 }
 

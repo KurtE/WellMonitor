@@ -8,11 +8,14 @@
 // Includes
 //====================================================================================
 #include <elapsedMillis.h>
+#include <IntervalTimer.h>
 
 //====================================================================================
 // Defines and Enums
 //====================================================================================
 #define CYCLE_INTERVAL_TIME 50  // more than maybe 4 cycles
+#define CYCLES_TO_REPORT 400  //  Count of Intervals per cycle
+#define CYCLE_TIME_US 125     // Interval timer cycle time in us
 #define DEADBAND_FUDGE 5
 
 enum {
@@ -20,13 +23,12 @@ enum {
   SENSOR_STATE_ON,
   SENSOR_STATE_ON_BOOT
 };
-typedef enum _sensor_update_state{
-  SENSOR_UPDATE_SAMPLING = 0,
-  SENSOR_UPDATE_DONE_SAME_VALUE,
-  SENSOR_UPDATE_DONE_NEW_VALUE,
-  SENSOR_UPDATE_ON_DETECTED,
-  SENSOR_UPDATE_OFF_DETECTED
-} SensorUpdateState;
+#define SENSOR_UPDATE_SAMPLING        0
+#define SENSOR_UPDATE_DONE_SAME_VALUE 0x01
+#define SENSOR_UPDATE_DONE_NEW_VALUE  0x02
+#define SENSOR_UPDATE_ON_DETECTED     0x04
+#define SENSOR_UPDATE_OFF_DETECTED    0x08
+#define SENSOR_UPDATE_ON_BOOT_DETECTED   0x10
 
 //====================================================================================
 // Main Sensor class
@@ -37,10 +39,14 @@ public:
   CurrentSensor(uint8_t analog_pin) {_pin = analog_pin; };
 
   static void initSensors(void);            // Move all of our init stuff into member function here. 
+  static void IntervalTimerProc (void);
+  // Glboal to call                 
+  static volatile uint32_t any_sensor_changed;       // Set if any thing changed state
+  static IntervalTimer timer;                       // An interval timer to use with this
 
   // Init function
   void      init(uint16_t avg_off, uint16_t db);                       // Our Initialize function
-  SensorUpdateState   update(void);                     // Update - do analogRead - return 1 if cycle time completed
+  uint8_t   update(void);                     // Update - do analogRead - return 1 if cycle time completed
   uint32_t  curValue(void) {return _cur_value; };                // return the current value
   void      resetCounters(void);              // Reset our counters. 
   void      minOnValue(uint32_t val) {_min_on_value = val; }
@@ -85,7 +91,7 @@ private:
   uint32_t      _max_value;                 // What is the maximum on value;
   uint32_t      _sum_values;                // sum of the values while on, 
   uint32_t      _cnt_values;                // count of values while on...
-  
+
 };
 
 //====================================================================================

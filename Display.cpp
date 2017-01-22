@@ -78,6 +78,10 @@ void InitTFTDisplay(void)
 //====================================================================================
 void UpdateDisplayTempHumidy()
 {
+  if (!sht31_detected) {
+    return; // no SHT31 detected.
+  }
+  
   tft.setFont(Arial_14);
   tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
   // Date/time - Will display
@@ -127,7 +131,7 @@ void UpdateDisplayDateTime() {
 //====================================================================================
 // UpdateDisplayTime - Update the displays Data/Time
 //====================================================================================
-void UpdateSensorData(uint8_t iSensor, SensorUpdateState update_state) {
+void UpdateDisplaySensorData(uint8_t iSensor, uint8_t update_state) {
   uint16_t y_start = SENSOR_Y_STARTS[iSensor];
   switch (update_state) {
     case SENSOR_UPDATE_SAMPLING:
@@ -142,6 +146,8 @@ void UpdateSensorData(uint8_t iSensor, SensorUpdateState update_state) {
                    g_Sensors[iSensor]->minValue(), g_Sensors[iSensor]->maxValue(), g_Sensors[iSensor]->avgValue());
       }
       break;
+      
+    case SENSOR_UPDATE_ON_BOOT_DETECTED:
     case SENSOR_UPDATE_ON_DETECTED:
       {
         tft.setFont(Arial_14);

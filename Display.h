@@ -28,13 +28,16 @@
 #define TFT_STATE_X 115
 #define TFT_STATE_OFFSET_Y 4
 #define TFT_STATE_ROW2_OFFSET_Y 24
+
+#define UPDATE_TIME_TEMP_MILLIS 250
+
 //====================================================================================
 // Screen layout and functions  
 //====================================================================================
 extern void InitTFTDisplay(void);
 extern void UpdateDisplayTempHumidy(void);
 extern void UpdateDisplayDateTime();
-extern void UpdateSensorData(uint8_t iSensor, SensorUpdateState update_state);
+extern void UpdateDisplaySensorData(uint8_t iSensor, uint8_t update_state);
 
 
 #endif

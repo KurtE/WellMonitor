@@ -56,6 +56,7 @@
 // Global variables
 //====================================================================================
 extern Adafruit_SHT31 sht31;
+extern bool sht31_detected; 	// Does this unit have an sht31? 
 extern uint8_t master_node;
 
 #endif
