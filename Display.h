@@ -29,7 +29,7 @@
 #define TFT_STATE_OFFSET_Y 4
 #define TFT_STATE_ROW2_OFFSET_Y 24
 
-#define UPDATE_TIME_TEMP_MILLIS 250
+#define UPDATE_TIME_TEMP_MILLIS 500
 
 //====================================================================================
 // Screen layout and functions  

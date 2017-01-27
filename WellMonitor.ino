@@ -34,6 +34,7 @@ int last_val = -332767;    // setup to some value that we wont ever see
 // SPI1 Miso=D5, Mosi=21, sck=20, CS=31
 RH_RF95 rf95(RFM95_CS, RFM95_INT, hardware_spi1);
 uint8_t master_node;
+
 elapsedMillis time_to_update_time_temp;
 
 uint8_t cur_sensor_index = 0;
@@ -122,7 +123,9 @@ void setup() {
 
   Serial.println("Before Init Sensors");
   CurrentSensor::initSensors();
-
+  pinMode(0, OUTPUT);
+  pinMode(1, OUTPUT);
+  pinMode(4, OUTPUT);
 }
 
 
@@ -130,54 +133,36 @@ void setup() {
 // Main Loop
 //====================================================================================
 void loop() {
-
+  digitalWriteFast(4, HIGH);
   // We now have the Interval timer doing most of the sensor work.
   // We simple look for it to signal us.
   uint32_t sensors_changed = CurrentSensor::any_sensor_changed;
   if (sensors_changed) {
+    digitalWriteFast(0, HIGH);
     CurrentSensor::any_sensor_changed = 0;  // clear it out
 
     // update the displayed data.
     for (uint8_t sensor_index = 0; sensor_index < g_sensors_cnt; sensor_index++) {
-      uint8_t sensor_updated = (sensors_changed >> 24) & 0xff;
-      UpdateDisplaySensorData(sensor_index, sensor_updated);
-      sensors_changed <<= 8;  // Should rework the order
+      uint8_t sensor_changed = CurrentSensor::sensors_changed[sensor_index];
+      CurrentSensor::sensors_changed[sensor_index] = 0;
+      UpdateDisplaySensorData(sensor_index, sensor_changed);
     }
 
+    digitalWriteFast(0, LOW);
   }
-
+#if 1
   if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
     UpdateDisplayTempHumidy();
     UpdateDisplayDateTime();
 
     time_to_update_time_temp = 0;
   }
+#endif
+
+  digitalWriteFast(4, LOW);
 }
 
 time_t getTeensy3Time()
 {
   return Teensy3Clock.get();
 }
-
-void printDigits(int digits) {
-  // utility function for digital clock display: prints preceding colon and leading 0
-  Serial.print(":");
-  if (digits < 10)
-    Serial.print('0');
-  Serial.print(digits);
-}
-
-void digitalClockDisplay() {
-  // digital clock display of the time
-  Serial.print(hour());
-  printDigits(minute());
-  printDigits(second());
-  Serial.print(" ");
-  Serial.print(day());
-  Serial.print(" ");
-  Serial.print(month());
-  Serial.print(" ");
-  Serial.print(year());
-  Serial.println();
-}
-

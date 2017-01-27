@@ -23,13 +23,17 @@ enum {
   SENSOR_STATE_ON,
   SENSOR_STATE_ON_BOOT
 };
-#define SENSOR_UPDATE_SAMPLING        0
-#define SENSOR_UPDATE_DONE_SAME_VALUE 0x01
-#define SENSOR_UPDATE_DONE_NEW_VALUE  0x02
-#define SENSOR_UPDATE_ON_DETECTED     0x04
-#define SENSOR_UPDATE_OFF_DETECTED    0x08
-#define SENSOR_UPDATE_ON_BOOT_DETECTED   0x10
 
+enum {
+  SENSOR_UPDATE_SAMPLING = 0,
+  SENSOR_UPDATE_DONE_SAME_VALUE = 1,
+  SENSOR_UPDATE_DONE_NEW_VALUE = 2,
+  SENSOR_UPDATE_ON_DETECTED = 4, 
+  SENSOR_UPDATE_OFF_DETECTED = 8,
+  SENSOR_UPDATE_ON_BOOT_DETECTED = 16
+  
+
+};
 //====================================================================================
 // Main Sensor class
 //====================================================================================
@@ -40,8 +44,9 @@ public:
 
   static void initSensors(void);            // Move all of our init stuff into member function here. 
   static void IntervalTimerProc (void);
-  // Glboal to call                 
-  static volatile uint32_t any_sensor_changed;       // Set if any thing changed state
+  // Glboal to call                
+  static volatile uint8_t sensors_changed[4]; 
+  static volatile uint8_t any_sensor_changed; 
   static IntervalTimer timer;                       // An interval timer to use with this
 
   // Init function
