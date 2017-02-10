@@ -2,16 +2,18 @@
 #include <Arduino.h>
 #include "globals.h"
 #include "Display.h"
+#include "RemoteData.h"
 #include <SPIN.h>
 #include <ILI9341_t3n.h>
 #include <ili9341_t3n_font_Arial.h>
 #include <ili9341_t3n_font_ArialBold.h>
 #include <Adafruit_NeoPixel.h>
 #include <XPT2046_Touchscreen.h>
-#include <Wire.h>
+#include <i2c_t3.h>
 #include <Adafruit_SHT31.h>
 
 #include <SPI.h>
+#include <RHDatagram.h>
 #include <RH_RF95.h>
 #include <RHHardwareSPI1.h>
 
@@ -26,14 +28,11 @@ int last_val = -332767;    // setup to some value that we wont ever see
 
 
 
-// MISO 5, MOSI 21 SCK 20
-#define RF95_FREQ 915.0
 //====================================================================================
 // Globals
 //====================================================================================
 // SPI1 Miso=D5, Mosi=21, sck=20, CS=31
-RH_RF95 rf95(RFM95_CS, RFM95_INT, hardware_spi1);
-uint8_t master_node;
+uint8_t g_master_node;
 
 elapsedMillis time_to_update_time_temp;
 
@@ -41,7 +40,7 @@ uint8_t cur_sensor_index = 0;
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
-bool sht31_detected = false;   // Does this unit have an sht31? 
+bool g_sht31_detected = false;   // Does this unit have an sht31? 
 
 
 //====================================================================================
@@ -71,9 +70,9 @@ void setup() {
   strip.setPixelColor(0, strip.Color(0, 0, 0));
   strip.show();
 
-  master_node = digitalRead(MASTER_SLAVE) ? 0 : 1;
+  g_master_node = digitalRead(MASTER_SLAVE) ? 0 : 1;
 
-  if (master_node) {
+  if (g_master_node) {
     Serial.println("Master Node");
   } else {
     Serial.println("Slave Node");
@@ -88,19 +87,7 @@ void setup() {
     Serial.println("RTC has set the system time");
   }
 
-
-  // Init the radio on the board - probably move to own function later
-  SPI1.setMISO(RFM95_MISO);
-  SPI1.setMOSI(RFM95_MOSI);
-  SPI1.setSCK(RFM95_SCK);
-  if (!rf95.init()) {
-    Serial.println("RF95: init failed");
-  } else {
-    if (!rf95.setFrequency(RF95_FREQ)) {
-      Serial.println("RF95: setFrequency failed");
-    } else
-      rf95.setTxPower(23, false);
-  }
+  InitRemoteRadio();
 
   // Setup your Analog settings
   analogReadResolution(11); // 11-bit resolution 0 to 2047
@@ -112,7 +99,7 @@ void setup() {
   pinMode(A5, INPUT);
   if (digitalRead(A4) && digitalRead(A5)) {
     if (sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
-      sht31_detected = true;   // Does this unit have an sht31? 
+      g_sht31_detected = true;   // Does this unit have an sht31? 
     } else {
       Serial.println("Couldn't find SHT31");
     }
@@ -121,8 +108,15 @@ void setup() {
     Serial.println("SHT31 - Not detected");
   }
 
-  Serial.println("Before Init Sensors");
-  CurrentSensor::initSensors();
+  if (g_master_node) {
+    Serial.println("Master: Before Init Sensors");
+    CurrentSensor::initSensors();
+  }
+
+  // Let the other side know we are here
+  SendRemotePing(true);
+
+  // Debug
   pinMode(0, OUTPUT);
   pinMode(1, OUTPUT);
   pinMode(4, OUTPUT);
@@ -136,29 +130,39 @@ void loop() {
   digitalWriteFast(4, HIGH);
   // We now have the Interval timer doing most of the sensor work.
   // We simple look for it to signal us.
-  uint32_t sensors_changed = CurrentSensor::any_sensor_changed;
+  uint32_t sensors_changed = 0;
+  if (g_master_node) {
+    sensors_changed = CurrentSensor::any_sensor_changed;
+  } 
+  sensors_changed |= ProcessRemoteMessages();
+  
   if (sensors_changed) {
+    Serial.println("==>Loop Sensor changed");
     digitalWriteFast(0, HIGH);
     CurrentSensor::any_sensor_changed = 0;  // clear it out
 
     // update the displayed data.
     for (uint8_t sensor_index = 0; sensor_index < g_sensors_cnt; sensor_index++) {
-      uint8_t sensor_changed = CurrentSensor::sensors_changed[sensor_index];
-      CurrentSensor::sensors_changed[sensor_index] = 0;
-      UpdateDisplaySensorData(sensor_index, sensor_changed);
+      if (UpdateDisplaySensorData(sensor_index)) {
+        if (g_master_node) {
+          SendRemoteSensorData(sensor_index);  // Tell other side we have updated information. 
+        }
+      }
+    }
+
+    if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
+      ReadTempHumiditySensor();
+      UpdateDisplayDateTime();
+      time_to_update_time_temp = 0;
+
     }
 
     digitalWriteFast(0, LOW);
+    CurrentSensor::sensor_scan_state = SENSOR_SCAN_START; // tell the scan to sart up again. 
   }
-#if 1
-  if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
-    UpdateDisplayTempHumidy();
-    UpdateDisplayDateTime();
 
-    time_to_update_time_temp = 0;
-  }
-#endif
-
+  // Process touch screen
+  ProcessTouchScreen();
   digitalWriteFast(4, LOW);
 }
 

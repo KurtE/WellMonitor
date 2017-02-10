@@ -3,7 +3,7 @@
 //====================================================================================
 #ifndef __globals_h__
 #define __globals_h__
-#include <Wire.h>
+#include <i2c_t3.h>
 #include <Adafruit_SHT31.h>
 
 //====================================================================================
@@ -11,9 +11,10 @@
 //====================================================================================
 #define TFT_RST -1
 #define RFM95_INT     2     // RFM 95 Interrupt pin
+#define TFT_TIRQ      3     // Touch screen IRQ pin
 #define RFM95_MISO    5     // RFM 95 MISO
 #define TFT_MOSI      7     // SPI MOSI
-#define TOUCH_CS      8     // SPI Touch CS
+#define TFT_TCS       8     // SPI Touch CS
 #define TFT_MISO      12    // SPI MISO
 #define TFT_SCK       14    // SPI SCK
 #define TFT_CS        15    // TFT CS
@@ -42,10 +43,12 @@
 //====================================================================================
 // This is calibration data for the raw touch data to the screen coordinates
 // Warning, These are WIP
-#define TS_MINX 337
-#define TS_MINY 529
-#define TS_MAXX 3729
-#define TS_MAXY 3711
+#define SCREEN_ORIENTATION_1
+#define TS_MINX 260
+#define TS_MINY 350
+#define TS_MAXX 3825
+#define TS_MAXY 3825
+
 
 //====================================================================================
 // Current g_Sensors.   
@@ -56,7 +59,7 @@
 // Global variables
 //====================================================================================
 extern Adafruit_SHT31 sht31;
-extern bool sht31_detected; 	// Does this unit have an sht31? 
-extern uint8_t master_node;
+extern bool g_sht31_detected; 	// Does this unit have an sht31? 
+extern uint8_t g_master_node;
 
 #endif

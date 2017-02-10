@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include "globals.h"
 #include "display.h"
+#include "RemoteData.h"
 #include <TimeLib.h>
 #include <ILI9341_t3n.h>
 #include <ili9341_t3n_font_Arial.h>
@@ -18,10 +19,10 @@
 //====================================================================================
 // globals
 //====================================================================================
-XPT2046_Touchscreen ts(TOUCH_CS);
+XPT2046_Touchscreen ts(TFT_TCS, TFT_TIRQ);
 ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
-uint16_t g_display_t = 0;
-uint16_t g_display_h = 0;
+uint16_t g_current_temp = 0;
+uint16_t g_current_humidity = 0;
 int     g_display_min = 99;   // some bogus value
 
 static const uint16_t SENSOR_Y_STARTS[] = {TFT_WELL1_Y, TFT_WELL2_Y, TFT_PRESURE_Y, TFT_HEATER_Y};
@@ -68,54 +69,74 @@ void InitTFTDisplay(void)
   tft.setTextColor(ILI9341_RED, ILI9341_BLACK);
 
   tft.setCursor(TFT_TEMP_X, TFT_TIMETEMP_Y);
-  tft.print(g_display_t, DEC);
+  tft.print(g_current_temp, DEC);
 
 }
 
 
 //====================================================================================
-// UpdateDisplayTempHumidy - Update the displays Data/Time
+// ReadTempHumiditySensor - Update the displays Data/Time
 //====================================================================================
-void UpdateDisplayTempHumidy()
+void ReadTempHumiditySensor()
 {
-  if (!sht31_detected) {
+  if (!g_sht31_detected) {
     return; // no SHT31 detected.
   }
-  static boolean sht31_read_started = false;  // sort of piece of ... 
+  pinMode(9, OUTPUT);
+  static boolean sht31_read_started = false;  // sort of piece of ...
 
-  // If we have not started a read yet, do so now... 
+  // If we have not started a read yet, do so now...
   if (!sht31_read_started) {
     if (sht31.beginReadTempHum())
       sht31_read_started = true;
-      return;
+    return;
   }
-  
+
+  digitalWriteFast(9, HIGH);
   if (sht31.completeReadTempHum()) {
-
-    tft.setFont(Arial_14);
-    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-    // Date/time - Will display
-
     float t = sht31.temperature();
     float h = sht31.humidity();
-
-    // Make sure they are valid
     uint16_t tint = (uint16_t)(t * 1.8 + 32.0);
-    if (tint != g_display_t) {
-      g_display_t = tint;
-      tft.setCursor(TFT_TEMP_X, TFT_TIMETEMP_Y);
-      tft.print(g_display_t, DEC);
-    }
-
     uint16_t hint = (uint16_t)h;
-    if (hint != g_display_h) {
-      g_display_h = hint;
-      tft.setCursor(TFT_HUMIDITY_X, TFT_TIMETEMP_Y);
-      tft.print(g_display_h, DEC);
+    if (UpdateTempHumidity(tint, hint, true)) {
+      // We updated temp and/or humidity. so send message
+      SendRemoteTempHumidityMsg();
     }
   }
   // Tell system that next call should start new read...
+  digitalWriteFast(9, LOW);
   sht31_read_started = false;
+}
+
+//====================================================================================
+// UpdateTempHumidity - Update the displays Data/Time
+//====================================================================================
+bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data)
+{
+  bool fChanged = false;
+
+  // Pass 1 if data is local display or if remote and no loacl display
+  if (!local_data && g_sht31_detected)
+    return false; //
+
+  tft.setFont(Arial_14);
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+  // Date/time - Will display
+
+  if (temp != g_current_temp) {
+    g_current_temp = temp;
+    tft.setCursor(TFT_TEMP_X, TFT_TIMETEMP_Y);
+    tft.print(g_current_temp, DEC);
+    fChanged = true;
+  }
+
+  if (humidity != g_current_humidity) {
+    g_current_humidity = humidity;
+    tft.setCursor(TFT_HUMIDITY_X, TFT_TIMETEMP_Y);
+    tft.print(g_current_humidity, DEC);
+    fChanged = true;
+  }
+  return fChanged && local_data;
 }
 
 //====================================================================================
@@ -152,60 +173,107 @@ void EraseRestOfTextLine(const ILI9341_t3_font_t &f) {
 // UpdateDisplaySensorData - Update Sensor data
 //====================================================================================
 #define SENSOR_ON (SENSOR_UPDATE_ON_BOOT_DETECTED | SENSOR_UPDATE_ON_DETECTED)
-void UpdateDisplaySensorData(uint8_t iSensor, uint8_t update_state) {
-  uint16_t y_start = SENSOR_Y_STARTS[iSensor];
-  if (update_state & (SENSOR_ON | SENSOR_UPDATE_OFF_DETECTED)) {
-    Serial.printf("UDSD: %d %d %d\n", iSensor, update_state, g_Sensors[iSensor]->state());
-    if ((update_state & SENSOR_ON) && 
-        (!(update_state & SENSOR_UPDATE_OFF_DETECTED) || (g_Sensors[iSensor]->onTime() > g_Sensors[iSensor]->offTime())) ) {
+bool UpdateDisplaySensorData(uint8_t iSensor) {
+  CurrentSensor *psensor = g_Sensors[iSensor];
 
+  uint16_t y_start = SENSOR_Y_STARTS[iSensor];
+  bool send_remote_udpate = false;
+  time_t t = psensor->offTime();
+  time_t ton = psensor->onTime();
+  Serial.printf("*** UDSD *** %d %d %d %d %d\n", iSensor, psensor->state(), psensor->displayState(),
+                psensor->curValue(), psensor->displayVal());
+  if (psensor->state() != psensor->displayState()) {
+    psensor->displayState(psensor->state());
+    if (psensor->state()) {
       // We have a logical On condition and if there was on off it was before the on, so show on.
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
-      time_t t = g_Sensors[iSensor]->onTime();
-      tft.printf("ON %d/%d/%d %d:%02d", month(t), day(t), year(t)%100, hour(t), minute(t));
+      time_t t = psensor->onTime();
+      tft.printf("ON %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
       EraseRestOfTextLine(Arial_14);
 
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-      tft.printf("C:%d", g_Sensors[iSensor]->curValue());
+      tft.printf("C:%d", psensor->curValue());
       EraseRestOfTextLine(Arial_14);
+      send_remote_udpate = true;   // Lets send all on messages
+      psensor->displayVal(0xffff);  // clear the remembered value...
     } else {
-      // It turned off and no on since.
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
-      time_t t = g_Sensors[iSensor]->offTime();
-      time_t ton = g_Sensors[iSensor]->onTime();
-      tft.printf("OFF %d/%d/%d %d:%02d", month(t), day(t), year(t)%100, hour(t), minute(t));
+      tft.printf("OFF %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
       EraseRestOfTextLine(Arial_14);
 
       // lets update the display information maybe delta time
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-      t -= ton;   // We have the number of seconds that the sensor was on. 
+      t -= ton;   // We have the number of seconds that the sensor was on.
       if (elapsedDays(t)) {
-        tft.printf("OT: %dD %d:%02d A:%d", elapsedDays(t), hour(t), minute(t), g_Sensors[iSensor]->avgValue());
+        tft.printf("OT: %dD %d:%02d A:%d", elapsedDays(t), hour(t), minute(t), psensor->avgValue());
       } else {
-        tft.printf("OT: %d:%02d:%02d A:%d", hour(t), minute(t), second(t), g_Sensors[iSensor]->avgValue());
+        tft.printf("OT: %d:%02d:%02d A:%d", hour(t), minute(t), second(t), psensor->avgValue());
       }
       EraseRestOfTextLine(Arial_14);
+      send_remote_udpate = true;   // Lets send all on messages
+
     }
-  } else if (update_state & SENSOR_UPDATE_DONE_NEW_VALUE) {
-    // We have a changed value if state is on update the display
-    if (g_Sensors[iSensor]->state()) {
-      tft.setFont(Arial_14);
-      tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-      tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-      tft.printf("C:%d M:%d X:%d A:%d", g_Sensors[iSensor]->curValue(),
-                 g_Sensors[iSensor]->minValue(), g_Sensors[iSensor]->maxValue(), g_Sensors[iSensor]->avgValue());
-      EraseRestOfTextLine(Arial_14);
-    }
+  } else if (psensor->state() && (psensor->curValue() != psensor->displayVal())) {
+    psensor->displayVal(psensor->curValue());
+    tft.setFont(Arial_14);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
+    tft.printf("C:%d M:%d X:%d A:%d", psensor->curValue(),
+               psensor->minValue(), psensor->maxValue(), psensor->avgValue());
+    EraseRestOfTextLine(Arial_14);
 
   }
+  return send_remote_udpate;
 }
 
+//====================================================================================
+// ProcessTouchScreen - Process input from Touch Screen.
+//====================================================================================
+TS_Point g_pt;  // currently global for debug stuff
+
+bool GetTouchPoint(int16_t *px, int16_t *py)
+{
+  if (!ts.touched()) // only process when touched.  empty is just a timer...
+    return false;
+
+  g_pt = ts.getPoint();
+
+  // Scale from ~0->4000 to tft.width using the calibration #'s
+#ifdef SCREEN_ORIENTATION_1
+  *px = map(g_pt.x, TS_MINX, TS_MAXX, 0, tft.width());
+  *py = map(g_pt.y, TS_MINY, TS_MAXY, 0, tft.height());
+#else
+  *px = map(g_pt.x, TS_MINX, TS_MAXX, tft.width(), 0);
+  *py = map(g_pt.y, TS_MAXY, TS_MINY, 0, tft.height());
+#endif
+  return true;
+
+}
+
+//====================================================================================
+// ProcessTouchScreen - Process input from Touch Screen.
+//====================================================================================
+bool ProcessTouchScreen()
+{
+  if (!ts.touched()) // only process when touched.  empty is just a timer...
+    return false;
+
+  int16_t x, y, x_prev = 0xffff, y_prev = 0xffff;
+  while (GetTouchPoint(&x, &y)) {
+    if ((x != x_prev) || (y != y_prev)) {
+      x_prev = x;
+      y_prev = y;
+      Serial.printf("PTS Raw: %d, %d Out: %d, %d\n", g_pt.x, g_pt.y, x, y);
+    }
+  }
+  return true;
+}
 

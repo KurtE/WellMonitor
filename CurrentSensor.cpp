@@ -17,8 +17,8 @@ CurrentSensor Sensor4(SENSOR4_PIN);
 CurrentSensor *g_Sensors[] = {&Sensor1, &Sensor2, &Sensor3, &Sensor4};
 #define CNT_SENSORS (sizeof(g_Sensors)/sizeof(g_Sensors[0]))
 const uint8_t g_sensors_cnt = CNT_SENSORS;
-volatile uint8_t CurrentSensor::sensors_changed[4]; 
 volatile uint8_t CurrentSensor::any_sensor_changed = 0; 
+volatile uint8_t CurrentSensor::sensor_scan_state = 0;        // Should we do scanning.  0 - no, 1 - start, 2 running... 
 
 IntervalTimer CurrentSensor::timer;                       // An interval timer to use with this
 
@@ -41,6 +41,11 @@ void CurrentSensor::initSensors(void)
   // EEPROM data. - Maybe multiple sections
   // Beginning have some default settings for Avg off and deadband.
   // May have another section which keeps last on/off times.
+  if (!g_master_node){ 
+    // Slave mode does not need this yet
+    return; 
+  }
+
   WELL_MONITOR_EEPROM_DATA wmee;
 
   EEPROM.get(EEPROM_SENSOR_INFO, wmee);
@@ -97,6 +102,7 @@ void CurrentSensor::initSensors(void)
   pinMode(13, OUTPUT);
   pinMode(1, OUTPUT);
   // Start interval timer to take care of updating the sensor.
+  sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval 
   timer.begin(IntervalTimerProc, CYCLE_TIME_US);
 }
 
@@ -106,13 +112,19 @@ void CurrentSensor::initSensors(void)
 //==========================================================================
 void CurrentSensor::IntervalTimerProc ()
 {
+  // See if we are in a stopped state. 
+  if (sensor_scan_state == SENSOR_SCAN_STOP)
+    return; 
   // Lets cycle through all of the sensors
   uint8_t any_changed = 0;
   uint8_t update_retval = 0; 
   for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
+    if (sensor_scan_state == SENSOR_SCAN_START) {
+      g_Sensors[iSensor]->resetCounters();    // update the counters to start
+    }
+  
     update_retval = g_Sensors[iSensor]->update();
     if (update_retval) {
-      sensors_changed[iSensor] |= update_retval;  // or in in case we maybe two slow picking this up...
       if (update_retval > 1)
         any_changed = 1;      // Only set if any values or state changes...
         digitalWrite(1, !digitalRead(1));
@@ -123,8 +135,11 @@ void CurrentSensor::IntervalTimerProc ()
   }
   if (any_changed) {
     CurrentSensor::any_sensor_changed = any_changed;
-    Serial.printf("IPTC %d %d %d %d\n", sensors_changed[0], sensors_changed[1], sensors_changed[2], sensors_changed[3]);
+    Serial.println("** IPTC **");
     digitalWrite(13, !digitalRead(13));
+    sensor_scan_state = SENSOR_SCAN_STOP;   // set the scan to stop.  Wait for caller to continue... 
+  } else {
+    sensor_scan_state = SENSOR_SCAN_RUNNING;   //  update to say we are in running state. 
   }
 }
 
@@ -139,13 +154,13 @@ void CurrentSensor::init(uint16_t avg_off, uint16_t db)
   uint16_t count_samples = 0;
   uint16_t val = analogRead(_pin);
 
-  _cycle_elapsed_time = 0;
+  elapsedMillis cycle_elapsed_time = 0;        // Takes card of delta time
 
   // Initialize the state of some of the different members
   _min_on_value = MIN_CURRENT_ON;
   _state = SENSOR_STATE_OFF;
 
-  while (_cycle_elapsed_time < 250) {
+  while (cycle_elapsed_time < 250) {
     val = analogRead(_pin);
     sum += val;
     if (val < min_sample) min_sample = val;
@@ -169,6 +184,7 @@ void CurrentSensor::init(uint16_t avg_off, uint16_t db)
   }
 
   _cur_value = 0;
+  _display_state = 0;
   resetCounters();
 }
 
@@ -200,7 +216,6 @@ void CurrentSensor::state(uint8_t s)
 //==========================================================================
 void CurrentSensor::resetCounters()                    // Update - do analogRead - return 1 if cycle time completed
 {
-  _cycle_elapsed_time = 0;
   _cycle_sum_deltas_sq = 0;
   _cycle_count_reads = 0;
 }
@@ -222,9 +237,9 @@ uint8_t CurrentSensor::update(void)                    // Update - do analogRead
         _cur_value = dt_avg;
         //Serial.printf("%d: %d\n", _pin, _cur_value);
         return_value = SENSOR_UPDATE_DONE_NEW_VALUE;
+        Serial.printf("CSU(%d) %d %d %d\n", _pin, _cur_value, _min_on_value, _state);
       }
 
-      Serial.printf("CSU(%d) %d %d %d\n", _pin, _cur_value, _min_on_value, _state);
       if (_state != SENSOR_STATE_ON) {
         state(SENSOR_STATE_ON);   // turn the state on
         return_value = SENSOR_UPDATE_ON_DETECTED;
