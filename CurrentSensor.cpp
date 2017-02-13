@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <ADC.h>
 #include "CurrentSensor.h"
 #include "globals.h"
 #include "Display.h"
@@ -9,10 +10,10 @@
 //==========================================================================
 // Sensor global objects
 //==========================================================================
-CurrentSensor Sensor1(SENSOR1_PIN);
-CurrentSensor Sensor2(SENSOR2_PIN);
-CurrentSensor Sensor3(SENSOR3_PIN);
-CurrentSensor Sensor4(SENSOR4_PIN);
+CurrentSensor Sensor1(SENSOR1_PIN, ADC_1);
+CurrentSensor Sensor2(SENSOR2_PIN, ADC_0);
+CurrentSensor Sensor3(SENSOR3_PIN, ADC_0);
+CurrentSensor Sensor4(SENSOR4_PIN, ADC_1);
 
 CurrentSensor *g_Sensors[] = {&Sensor1, &Sensor2, &Sensor3, &Sensor4};
 #define CNT_SENSORS (sizeof(g_Sensors)/sizeof(g_Sensors[0]))
@@ -21,6 +22,7 @@ volatile uint8_t CurrentSensor::any_sensor_changed = 0;
 volatile uint8_t CurrentSensor::sensor_scan_state = 0;        // Should we do scanning.  0 - no, 1 - start, 2 running... 
 
 IntervalTimer CurrentSensor::timer;                       // An interval timer to use with this
+ADC *adc = new ADC(); // adc object
 
 
 
@@ -45,6 +47,19 @@ void CurrentSensor::initSensors(void)
     // Slave mode does not need this yet
     return; 
   }
+
+  // Lets init the ADC library
+  adc->setAveraging(16); // set number of averages
+  adc->setResolution(12); // set bits of resolution
+  adc->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED); // change the conversion speed
+  adc->setSamplingSpeed(ADC_SAMPLING_SPEED::LOW_SPEED); // change the sampling speed
+  adc->setAveraging(16, ADC_1); // set number of averages
+  adc->setResolution(12, ADC_1); // set bits of resolution
+  adc->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED, ADC_1); // change the conversion speed
+  adc->setSamplingSpeed(ADC_SAMPLING_SPEED::LOW_SPEED, ADC_1); // change the sampling speed
+
+
+
 
   WELL_MONITOR_EEPROM_DATA wmee;
 
@@ -110,36 +125,48 @@ void CurrentSensor::initSensors(void)
 // IntervalTimerProc - We will call off to read in the currents of each
 // of our sensors.
 //==========================================================================
+uint16_t CurrentSensor::_interval_counter; // only need 1 bit but should work fine.
 void CurrentSensor::IntervalTimerProc ()
 {
+  // We are now doing the analog reads unblocking. 
+  // We have two ADC units, so can only have two 
+  // sensors doing analog reads per cycle  Sensors 0,1 and 2,3 should work
   // See if we are in a stopped state. 
-  if (sensor_scan_state == SENSOR_SCAN_STOP)
-    return; 
-  // Lets cycle through all of the sensors
-  uint8_t any_changed = 0;
-  uint8_t update_retval = 0; 
-  for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
-    if (sensor_scan_state == SENSOR_SCAN_START) {
-      g_Sensors[iSensor]->resetCounters();    // update the counters to start
-    }
-  
-    update_retval = g_Sensors[iSensor]->update();
-    if (update_retval) {
-      if (update_retval > 1)
-        any_changed = 1;      // Only set if any values or state changes...
-        digitalWrite(1, !digitalRead(1));
-    }
 
-//    if (update_retval >= SENSOR_UPDATE_ON_DETECTED)
-//      Serial.printf("\nITPC %d %d\n", iSensor, update_retval);
-  }
-  if (any_changed) {
-    CurrentSensor::any_sensor_changed = any_changed;
-    Serial.println("** IPTC **");
-    digitalWrite(13, !digitalRead(13));
-    sensor_scan_state = SENSOR_SCAN_STOP;   // set the scan to stop.  Wait for caller to continue... 
+  if (_interval_counter & 1) {
+    g_Sensors[0]->completeAnalogRead();
+    g_Sensors[1]->completeAnalogRead();
+    g_Sensors[2]->startAnalogRead();
+    g_Sensors[3]->startAnalogRead();
   } else {
-    sensor_scan_state = SENSOR_SCAN_RUNNING;   //  update to say we are in running state. 
+    g_Sensors[2]->completeAnalogRead();
+    g_Sensors[3]->completeAnalogRead();
+    g_Sensors[0]->startAnalogRead();
+    g_Sensors[1]->startAnalogRead();
+  }
+  _interval_counter++;
+
+  // Probably a cleaner way to do this:
+  if ((g_Sensors[0]->countAnalogReads() >= CYCLES_TO_REPORT) &&
+      (g_Sensors[2]->countAnalogReads() >= CYCLES_TO_REPORT)) {
+
+    uint8_t any_changed = 0;
+    uint8_t update_retval = 0; 
+
+    for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
+      update_retval = g_Sensors[iSensor]->update();
+      if (update_retval) {
+        if (update_retval > 1)
+          any_changed = 1;      // Only set if any values or state changes...
+          digitalWrite(1, !digitalRead(1));
+      }
+    }
+    //Serial.println();
+    if (any_changed) {
+      CurrentSensor::any_sensor_changed = any_changed;
+      //Serial.println("** IPTC **");
+      digitalWrite(13, !digitalRead(13));
+    }
   }
 }
 
@@ -159,9 +186,10 @@ void CurrentSensor::init(uint16_t avg_off, uint16_t db)
   // Initialize the state of some of the different members
   _min_on_value = MIN_CURRENT_ON;
   _state = SENSOR_STATE_OFF;
+  _analog_read_started = 0;
 
   while (cycle_elapsed_time < 250) {
-    val = analogRead(_pin);
+    val =  adc->analogRead(_pin, _adc_num);
     sum += val;
     if (val < min_sample) min_sample = val;
     if (val > max_sample) max_sample = val;
@@ -218,6 +246,43 @@ void CurrentSensor::resetCounters()                    // Update - do analogRead
 {
   _cycle_sum_deltas_sq = 0;
   _cycle_count_reads = 0;
+  _min_on_cycle = 0xffff;              // min  during this cycle of sums
+  _max_on_cycle = 0;                // Max during this cycle of sums
+}
+
+//==========================================================================
+// startAnalogRead
+//==========================================================================
+void CurrentSensor::startAnalogRead(void)                    // Update - do analogRead - return 1 if cycle time completed
+{
+
+ if (!adc->startSingleRead(_pin, _adc_num)) { // also: startSingleDifferential, analogSynchronizedRead, analogSynchronizedReadDifferential
+    Serial.println("Start single failed");
+    _analog_read_started = 0;
+  }  else {
+    _analog_read_started = 1;
+  } 
+}
+
+//==========================================================================
+// completeAnalogRead - complete the analog read
+//==========================================================================
+void CurrentSensor::completeAnalogRead(void)                    // Update - do analogRead - return 1 if cycle time completed
+{
+  if (!_analog_read_started) {
+    return;
+  }
+  if (!adc->isComplete(_adc_num)) {
+    Serial.printf("%d(%d)!isComplete\n", _pin, _adc_num);
+  }
+  uint16_t cur_value =  adc->readSingle(_adc_num);
+  if (cur_value > _max_on_cycle) _max_on_cycle = cur_value;
+  if (cur_value < _min_on_cycle) _min_on_cycle = cur_value;
+
+  int delta_from_center = (int)cur_value - _avgOffvalue;
+  _cycle_sum_deltas_sq += delta_from_center * delta_from_center;
+  _cycle_count_reads++;
+  _analog_read_started = 0;
 }
 
 //==========================================================================
@@ -225,50 +290,40 @@ void CurrentSensor::resetCounters()                    // Update - do analogRead
 //==========================================================================
 uint8_t CurrentSensor::update(void)                    // Update - do analogRead - return 1 if cycle time completed
 {
-  if (_cycle_count_reads > CYCLES_TO_REPORT) {
+  uint8_t return_value = SENSOR_UPDATE_DONE_SAME_VALUE;
+  uint32_t dt_avg = sqrt(_cycle_sum_deltas_sq / _cycle_count_reads);
+  //Serial.printf("%d ", _max_on_cycle-_min_on_cycle);
+  resetCounters();
 
-    uint8_t return_value = SENSOR_UPDATE_DONE_SAME_VALUE;
-    uint32_t dt_avg = sqrt(_cycle_sum_deltas_sq / _cycle_count_reads);
-    resetCounters();
-
-    if (dt_avg >= _min_on_value) {
-      // only set New value if we are on!
-      if (dt_avg != _cur_value) {
-        _cur_value = dt_avg;
-        //Serial.printf("%d: %d\n", _pin, _cur_value);
-        return_value = SENSOR_UPDATE_DONE_NEW_VALUE;
-        Serial.printf("CSU(%d) %d %d %d\n", _pin, _cur_value, _min_on_value, _state);
-      }
-
-      if (_state != SENSOR_STATE_ON) {
-        state(SENSOR_STATE_ON);   // turn the state on
-        return_value = SENSOR_UPDATE_ON_DETECTED;
-      } else {
-        if (_cur_value > _max_value)
-          _max_value = _cur_value;
-        if (_cur_value < _min_value)
-          _min_value = _cur_value;
-        _sum_values += _cur_value;
-        _cnt_values++;
-    
-      }
-    } else {
+  if (dt_avg >= _min_on_value) {
+    // only set New value if we are on!
+    if (dt_avg != _cur_value) {
       _cur_value = dt_avg;
-      if (_state) {
-        Serial.printf("CSU  X %d %d\n", _cur_value, _state);
-        state(SENSOR_STATE_OFF);
-        return_value = SENSOR_UPDATE_OFF_DETECTED;
-      }
+      //Serial.printf("%d: %d\n", _pin, _cur_value);
+      return_value = SENSOR_UPDATE_DONE_NEW_VALUE;
+      //Serial.printf("CSU(%d) %d %d %d\n", _pin, _cur_value, _min_on_value, _state);
     }
-    return return_value; // let them know we went through a cycle
+
+    if (_state != SENSOR_STATE_ON) {
+      state(SENSOR_STATE_ON);   // turn the state on
+      return_value = SENSOR_UPDATE_ON_DETECTED;
+    } else {
+      if (_cur_value > _max_value)
+        _max_value = _cur_value;
+      if (_cur_value < _min_value)
+        _min_value = _cur_value;
+      _sum_values += _cur_value;
+      _cnt_values++;
+  
+    }
+  } else {
+    _cur_value = dt_avg;
+    if (_state) {
+      //Serial.printf("CSU  X %d %d\n", _cur_value, _state);
+      state(SENSOR_STATE_OFF);
+      return_value = SENSOR_UPDATE_OFF_DETECTED;
+    }
   }
-  else
-  {
-    int cur_value =  analogRead(_pin);
-    int delta_from_center = cur_value - _avgOffvalue;
-    _cycle_sum_deltas_sq += delta_from_center * delta_from_center;
-    _cycle_count_reads++;
-  }
-  return SENSOR_UPDATE_SAMPLING;
+  return return_value; // let them know we went through a cycle
 }
 

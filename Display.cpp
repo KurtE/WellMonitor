@@ -177,11 +177,11 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
   CurrentSensor *psensor = g_Sensors[iSensor];
 
   uint16_t y_start = SENSOR_Y_STARTS[iSensor];
-  bool send_remote_udpate = false;
+  bool send_remote_update = false;
   time_t t = psensor->offTime();
   time_t ton = psensor->onTime();
-  Serial.printf("*** UDSD *** %d %d %d %d %d\n", iSensor, psensor->state(), psensor->displayState(),
-                psensor->curValue(), psensor->displayVal());
+  //Serial.printf("*** UDSD *** %d %d %d %d %d\n", iSensor, psensor->state(), psensor->displayState(),
+  //              psensor->curValue(), psensor->displayVal());
   if (psensor->state() != psensor->displayState()) {
     psensor->displayState(psensor->state());
     if (psensor->state()) {
@@ -198,7 +198,7 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
       tft.printf("C:%d", psensor->curValue());
       EraseRestOfTextLine(Arial_14);
-      send_remote_udpate = true;   // Lets send all on messages
+      send_remote_update = true;   // Lets send all on messages
       psensor->displayVal(0xffff);  // clear the remembered value...
     } else {
       tft.setFont(Arial_14);
@@ -218,7 +218,7 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
         tft.printf("OT: %d:%02d:%02d A:%d", hour(t), minute(t), second(t), psensor->avgValue());
       }
       EraseRestOfTextLine(Arial_14);
-      send_remote_udpate = true;   // Lets send all on messages
+      send_remote_update = true;   // Lets send all on messages
 
     }
   } else if (psensor->state() && (psensor->curValue() != psensor->displayVal())) {
@@ -229,9 +229,10 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
     tft.printf("C:%d M:%d X:%d A:%d", psensor->curValue(),
                psensor->minValue(), psensor->maxValue(), psensor->avgValue());
     EraseRestOfTextLine(Arial_14);
+      send_remote_update = true;   // Lets send all on messages
 
   }
-  return send_remote_udpate;
+  return send_remote_update;
 }
 
 //====================================================================================

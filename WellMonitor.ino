@@ -11,6 +11,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <i2c_t3.h>
 #include <Adafruit_SHT31.h>
+#include <ADC.h>
 
 #include <SPI.h>
 #include <RHDatagram.h>
@@ -90,8 +91,8 @@ void setup() {
   InitRemoteRadio();
 
   // Setup your Analog settings
-  analogReadResolution(11); // 11-bit resolution 0 to 2047
-  analogReadAveraging(4); // 4,8,16, or 32 samples.
+//  analogReadResolution(11); // 11-bit resolution 0 to 2047
+//  analogReadAveraging(4); // 4,8,16, or 32 samples.
 
   // Hack lets see if we can detect if we have external PU on the SCL/SDA pins
   // If not then sht32 may not be installed ans Wire library may hang...
@@ -150,17 +151,17 @@ void loop() {
       }
     }
 
-    if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
-      ReadTempHumiditySensor();
-      UpdateDisplayDateTime();
-      time_to_update_time_temp = 0;
-
-    }
 
     digitalWriteFast(0, LOW);
     CurrentSensor::sensor_scan_state = SENSOR_SCAN_START; // tell the scan to sart up again. 
   }
 
+  if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
+    ReadTempHumiditySensor();
+    UpdateDisplayDateTime();
+    time_to_update_time_temp = 0;
+
+  }
   // Process touch screen
   ProcessTouchScreen();
   digitalWriteFast(4, LOW);

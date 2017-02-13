@@ -9,13 +9,13 @@
 //====================================================================================
 #include <elapsedMillis.h>
 #include <IntervalTimer.h>
+#include <ADC.h>
 
 //====================================================================================
 // Defines and Enums
 //====================================================================================
-#define CYCLE_INTERVAL_TIME 50  // more than maybe 4 cycles
-#define CYCLES_TO_REPORT 400  //  Count of Intervals per cycle
-#define CYCLE_TIME_US 125     // Interval timer cycle time in us
+#define CYCLES_TO_REPORT 400          //  Count of Intervals per cycle (About 4 AC cycles) or 15th of second
+#define CYCLE_TIME_US 250 //166.666666     // Interval timer cycle time in us (1000000/(60*100))
 #define DEADBAND_FUDGE 5
 
 enum {
@@ -45,18 +45,21 @@ enum {
 class CurrentSensor {
 public:
   // Constructor
-  CurrentSensor(uint8_t analog_pin) {_pin = analog_pin; };
+  CurrentSensor(uint8_t analog_pin, int8_t adc_num) {_pin = analog_pin;_adc_num=adc_num;};
 
   static void initSensors(void);            // Move all of our init stuff into member function here. 
   static void IntervalTimerProc (void);
   // Glboal to call                
-  static volatile uint8_t any_sensor_changed; 
-  static volatile uint8_t sensor_scan_state;        // Should we do scanning.  0 - no, 1 - start, 2 running... 
-  static IntervalTimer timer;                       // An interval timer to use with this
+  static volatile uint8_t   any_sensor_changed; 
+  static volatile uint8_t   sensor_scan_state;        // Should we do scanning.  0 - no, 1 - start, 2 running... 
+  static IntervalTimer      timer;                    // An interval timer to use with this
+  static uint16_t           _interval_counter;        // only need 1 bit but should work fine.
 
   // Init function
-  void      init(uint16_t avg_off, uint16_t db);                       // Our Initialize function
-  uint8_t   update(void);                     // Update - do analogRead - return 1 if cycle time completed
+  void      init(uint16_t avg_off, uint16_t db);        // Our Initialize function
+  void      startAnalogRead();                          // Start a read operation
+  void      completeAnalogRead();                       // Lets complete the read operation
+  uint8_t   update(void);                               // Update - do analogRead - return 1 if cycle time completed
   uint16_t  curValue(void) {return _cur_value; };                // return the current value
   void      curValue(uint16_t val) {_cur_value = val;}
   void      resetCounters(void);              // Reset our counters. 
@@ -85,14 +88,19 @@ public:
   void      minValue(uint16_t val) {_min_value = val;}
   void      maxValue(uint16_t val) {_max_value = val;}
   void      avgValue(uint16_t val) {_sum_values = val; _cnt_values=1;} // Not sure but place holder...
+  uint16_t  countAnalogReads(void)  {return _cycle_count_reads;}
 private:
   uint8_t     _pin;                           // which analog pin to use    
+  int8_t      _adc_num;                       // which analog unit is the pin on?
   uint16_t    _avgOffvalue;                   // What is the average off value should be near res/2
   uint16_t    _deadband;                      // what we think the deadband is 
   uint16_t    _min_on_value;                  // What is the minimum value to trigger that we are on
+  uint8_t     _analog_read_started;           // was the analog read started properly?
 
   // Internal counters and sums   
-  uint16_t      _cycle_sum_deltas_sq;       // Sum of the square of the delta from avg
+  uint32_t      _cycle_sum_deltas_sq;       // Sum of the square of the delta from avg
+  uint16_t      _min_on_cycle;              // min  during this cycle of sums
+  uint16_t      _max_on_cycle;              // Max during this cycle of sums
   uint16_t      _cycle_count_reads;         // Count of reads during this cycle;
   uint16_t      _cur_value;                // Last reported sqrt(sum/count)
   uint16_t      _display_value;             // What value are we displaying? 
@@ -115,6 +123,8 @@ private:
 //====================================================================================
 extern CurrentSensor *g_Sensors[];
 extern const uint8_t g_sensors_cnt;
+extern ADC *adc;
+
 
 #endif
 

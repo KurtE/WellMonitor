@@ -148,11 +148,16 @@ uint32_t ProcessSensorMsg(WM_SENSOR_MSG *pmsg)
 	CurrentSensor *psensor = g_Sensors[sensor_index];
 	if (pmsg->state != psensor->state()) {
 		psensor->state(pmsg->state);
-		if (pmsg->state == SENSOR_STATE_ON)
+		if (pmsg->state == SENSOR_STATE_ON) {
 			retval = SENSOR_UPDATE_ON_DETECTED;
+			psensor->curValue(pmsg->curValue);
+		}
 		else if (pmsg->state == SENSOR_STATE_OFF)
+			psensor->curValue(pmsg->curValue);
 			retval = SENSOR_UPDATE_ON_DETECTED;
+		Serial.printf("PRSM NS: %d %d\n", psensor->state(), psensor->curValue());	
 	} else if (pmsg->curValue != psensor->curValue()) {
+		psensor->state(pmsg->state);
 		retval = SENSOR_UPDATE_DONE_NEW_VALUE;
 	}
 	psensor->curValue(pmsg->curValue);
@@ -177,6 +182,7 @@ uint32_t ProcessRemoteMessages()
 	uint32_t retval = 0;
 
 	if (manager.available()) {
+		len = sizeof(buff);
 		if (manager.recvfrom (buff, &len, &g_other_radio_id, &to, &id)) {
 			time_since_last_msg_received = 0;	// zero out timer of how long since last message. 
 			Serial.printf("CRM: (%x) l:%u f:%u t:%u i:%u\n", buff[0], len, g_other_radio_id, to, id);
