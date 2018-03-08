@@ -16,7 +16,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <XPT2046_Touchscreen.h>
 #include <i2c_t3.h>
-#include <Adafruit_SHT31.h>
+#include "SHT31.h"
 #include <elapsedMillis.h>
 #include <TimeLib.h>
 
@@ -79,13 +79,15 @@ void InitRemoteRadio()
 {
   // Init the radio/Manager on the board - probably move to own function later
   // First init the SPI to use the alternate pin numbers
+  Serial.println("Init Remote Radio");
   SPI1.setMISO(RFM95_MISO);
   SPI1.setMOSI(RFM95_MOSI);
   SPI1.setSCK(RFM95_SCK);
 
   // Our address depends on if Master or not
   if (!g_master_node) {
-  	manager.setThisAddress(WM_SLAVE_NODE );
+    Serial.printf(" setThisAddress %x\n", WM_SLAVE_NODE);
+    manager.setThisAddress(WM_SLAVE_NODE );
   }
   if (!manager.init()) {
     Serial.println("RF95: init failed");
@@ -94,14 +96,19 @@ void InitRemoteRadio()
       Serial.println("RF95: setFrequency failed");
     } else
       rf95.setTxPower(23, false);
+      Serial.println("Completed InitRadio\n");
+        
   }
+  rf95.printRegisters();
+  Serial.printf("Our Address: %x\n", manager.thisAddress());
 
 }
 
 //====================================================================================
-// ProcessPinMessage
+// ProcessPingMessage
 //====================================================================================
 void ProcessPingMsg(WM_PING_MSG *ppmsg) {
+  Serial.println("ProcessPingMsg");
 	// Lets see if the time sent to us is > than our time... If so maybe update our time
 	time_t tnow = now();
 	if ((timeStatus() == timeNotSet) || (tnow < ppmsg->time)) {

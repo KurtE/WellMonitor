@@ -56,9 +56,9 @@ void InitTFTDisplay(void)
   tft.setTextColor(ILI9341_YELLOW);
 
   tft.setCursor(TFT_TITLES_X, TFT_WELL1_Y);
-  tft.print("Well 1:");
+  tft.print("Well1:");
   tft.setCursor(TFT_TITLES_X, TFT_WELL2_Y);
-  tft.print("Well 2:");
+  tft.print("Well2:");
   tft.setCursor(TFT_TITLES_X, TFT_PRESURE_Y);
   tft.print("Pump:");
   tft.setCursor(TFT_TITLES_X, TFT_HEATER_Y);

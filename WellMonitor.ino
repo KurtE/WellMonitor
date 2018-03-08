@@ -1,3 +1,8 @@
+#include <SD.h>
+#include <SD_t3.h>
+
+//#include <WireKinetis.h>
+
 #include <EEPROM.h>
 #include <Arduino.h>
 #include "globals.h"
@@ -10,7 +15,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <XPT2046_Touchscreen.h>
 #include <i2c_t3.h>
-#include <Adafruit_SHT31.h>
+#include "SHT31.h"
 #include <ADC.h>
 
 #include <SPI.h>
@@ -26,6 +31,7 @@
 
 #define MIN_DELTA_TO_REPORT 2
 int last_val = -332767;    // setup to some value that we wont ever see
+bool g_sd_detected = false;      // did we detect an sd card?
 
 
 
@@ -77,6 +83,10 @@ void setup() {
     Serial.println("Master Node");
   } else {
     Serial.println("Slave Node");
+  }
+
+  if (!(g_sd_detected = SD.begin(BUILTIN_SDCARD))) {
+    Serial.println("SDCard failed to init");
   }
 
   InitTFTDisplay();

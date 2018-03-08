@@ -27,7 +27,7 @@
 #define TFT_PRESURE_Y 130
 #define TFT_HEATER_Y 180
 
-#define TFT_STATE_X 115
+#define TFT_STATE_X 95
 #define TFT_STATE_OFFSET_Y 4
 #define TFT_STATE_ROW2_OFFSET_Y 24
 

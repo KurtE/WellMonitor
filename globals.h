@@ -3,8 +3,7 @@
 //====================================================================================
 #ifndef __globals_h__
 #define __globals_h__
-#include <i2c_t3.h>
-#include <Adafruit_SHT31.h>
+#include "SHT31.h"
 
 //====================================================================================
 // Pin Numbers. 
@@ -60,6 +59,7 @@
 //====================================================================================
 extern Adafruit_SHT31 sht31;
 extern bool g_sht31_detected; 	// Does this unit have an sht31? 
+extern bool g_sd_detected;      // did we detect an sd card?
 extern uint8_t g_master_node;
 
 #endif
