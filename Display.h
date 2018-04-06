@@ -14,21 +14,21 @@
 //====================================================================================
 // Defines
 //====================================================================================
-#define TFT_TIMETEMP_Y 2
-#define TFT_TIME_X 2
-#define TFT_TEMP_HEADER_X 150
-#define TFT_TEMP_X 210
+#define TFT_TIMETEMP_Y        2
+#define TFT_TIME_X            2
+#define TFT_TEMP_HEADER_X     150
+#define TFT_TEMP_X            210
 #define TFT_HUMIDITY_HEADER_X 240
-#define TFT_HUMIDITY_X 290
+#define TFT_HUMIDITY_X        290
 
-#define TFT_TITLES_X 2
-#define TFT_WELL1_Y 30
-#define TFT_WELL2_Y 80
-#define TFT_PRESURE_Y 130
-#define TFT_HEATER_Y 180
+#define TFT_TITLES_X          2
+#define TFT_WELL1_Y           30
+#define TFT_WELL2_Y           80
+#define TFT_PRESURE_Y         130
+#define TFT_HEATER_Y          180
 
-#define TFT_STATE_X 95
-#define TFT_STATE_OFFSET_Y 4
+#define TFT_STATE_X           90
+#define TFT_STATE_OFFSET_Y      4
 #define TFT_STATE_ROW2_OFFSET_Y 24
 
 #define UPDATE_TIME_TEMP_MILLIS 500
@@ -55,6 +55,8 @@ extern bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data
 extern bool UpdateDisplaySensorData(uint8_t iSensor);
 extern bool ProcessTouchScreen();
 extern bool GetTouchPoint(int16_t *px, int16_t *py);
+
+extern void SetFullTFTBacklight();
 
 //====================================================================================
 // Define our display objects. 

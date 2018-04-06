@@ -12,6 +12,7 @@
 #define RFM95_INT     2     // RFM 95 Interrupt pin
 #define TFT_TIRQ      3     // Touch screen IRQ pin
 #define RFM95_MISO    5     // RFM 95 MISO
+#define TFT_BACKLIGHT 6     // TFT Backlight control
 #define TFT_MOSI      7     // SPI MOSI
 #define TFT_TCS       8     // SPI Touch CS
 #define TFT_MISO      12    // SPI MISO
@@ -48,6 +49,11 @@
 #define TS_MAXX 3825
 #define TS_MAXY 3825
 
+// Note: Dim 0-255 where 0 is full on and 255 full off
+#define TFT_DIM_INTERVAL_MILLIS 10000 // How fast to dim
+#define TFT_DIM_AMOUNT          16    // How much to dim
+#define TFT_DIM_MIN             0     // Full On....
+#define TFT_DIM_MAX             (256-16)  // MAX value             
 
 //====================================================================================
 // Current g_Sensors.   

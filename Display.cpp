@@ -15,7 +15,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <XPT2046_Touchscreen.h>
 
-
 //====================================================================================
 // globals
 //====================================================================================
@@ -23,7 +22,10 @@ XPT2046_Touchscreen ts(TFT_TCS, TFT_TIRQ);
 ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
 uint16_t g_current_temp = 0;
 uint16_t g_current_humidity = 0;
+
 int     g_display_min = 99;   // some bogus value
+uint32_t g_tft_backlight_timer; // When was the last time the touch screen was touched.
+uint16_t g_backlight_value = 0; // what is the current backlight 0-255
 
 static const uint16_t SENSOR_Y_STARTS[] = {TFT_WELL1_Y, TFT_WELL2_Y, TFT_PRESURE_Y, TFT_HEATER_Y};
 
@@ -52,7 +54,7 @@ void InitTFTDisplay(void)
   tft.print("Hum:");
 
   // Display Headers for the wells and the like
-  tft.setFont(Arial_24);
+  tft.setFont(Arial_20);
   tft.setTextColor(ILI9341_YELLOW);
 
   tft.setCursor(TFT_TITLES_X, TFT_WELL1_Y);
@@ -71,6 +73,14 @@ void InitTFTDisplay(void)
   tft.setCursor(TFT_TEMP_X, TFT_TIMETEMP_Y);
   tft.print(g_current_temp, DEC);
 
+  // Lets try playing with backlight to see how it works
+  analogWrite(TFT_BACKLIGHT, 255);  // Turn it off...
+  delay(1000);
+  analogWrite(TFT_BACKLIGHT, 128);
+  delay(1000);
+  analogWrite(TFT_BACKLIGHT, 64);
+  delay(1000);
+  SetFullTFTBacklight();
 }
 
 
@@ -229,14 +239,14 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
     tft.printf("C:%d M:%d X:%d A:%d", psensor->curValue(),
                psensor->minValue(), psensor->maxValue(), psensor->avgValue());
     EraseRestOfTextLine(Arial_14);
-      send_remote_update = true;   // Lets send all on messages
+    send_remote_update = true;   // Lets send all on messages
 
   }
   return send_remote_update;
 }
 
 //====================================================================================
-// ProcessTouchScreen - Process input from Touch Screen.
+// GetTouchPoint - Return true if touched and convert touch point to X and Y values
 //====================================================================================
 TS_Point g_pt;  // currently global for debug stuff
 
@@ -260,13 +270,35 @@ bool GetTouchPoint(int16_t *px, int16_t *py)
 }
 
 //====================================================================================
+// SetFullTFTBacklight - Turn to max brightness... May change later...
+//====================================================================================
+void SetFullTFTBacklight() 
+{
+  if (g_backlight_value != TFT_DIM_MIN) {
+    g_backlight_value = TFT_DIM_MIN;
+    analogWrite(TFT_BACKLIGHT, g_backlight_value);
+  }
+  g_tft_backlight_timer = millis(); // remember last time touched.
+}
+
+
+//====================================================================================
 // ProcessTouchScreen - Process input from Touch Screen.
 //====================================================================================
 bool ProcessTouchScreen()
 {
-  if (!ts.touched()) // only process when touched.  empty is just a timer...
+  if (!ts.touched()) { // only process when touched.  empty is just a timer...
+    if ((g_backlight_value < TFT_DIM_MAX) && (millis() - g_tft_backlight_timer) >= TFT_DIM_INTERVAL_MILLIS) {
+      g_backlight_value += TFT_DIM_AMOUNT;
+      if ( g_backlight_value > TFT_DIM_MAX) g_backlight_value = TFT_DIM_MAX;
+      analogWrite(TFT_BACKLIGHT, g_backlight_value);
+      g_tft_backlight_timer = millis();
+    }
     return false;
+  }
 
+  SetFullTFTBacklight();  // Make sure it is on...
+  
   int16_t x, y, x_prev = 0xffff, y_prev = 0xffff;
   while (GetTouchPoint(&x, &y)) {
     if ((x != x_prev) || (y != y_prev)) {
@@ -275,6 +307,7 @@ bool ProcessTouchScreen()
       Serial.printf("PTS Raw: %d, %d Out: %d, %d\n", g_pt.x, g_pt.y, x, y);
     }
   }
+  g_tft_backlight_timer = millis(); // remember last time touched.
   return true;
 }
 
