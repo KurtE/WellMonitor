@@ -172,11 +172,14 @@ void UpdateDisplayDateTime() {
 //====================================================================================
 // Helper to blank to end of text line.
 //====================================================================================
-void EraseRestOfTextLine(const ILI9341_t3_font_t &f) {
+void EraseRestOfTextLine(int16_t y_text, const ILI9341_t3_font_t &f) {
   int16_t x;
   int16_t y;
   tft.getCursor(&x, &y);
-  tft.fillRect(x, y, tft.width(), f.line_space, ILI9341_BLACK); // width will be truncated.
+  // Make sure we did not wrap around to next line... 
+  if (y == y_text) {
+    tft.fillRect(x, y, tft.width(), f.line_space, ILI9341_BLACK); // width will be truncated.
+  }
 }
 
 //====================================================================================
@@ -202,13 +205,13 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
       time_t t = psensor->onTime();
       tft.printf("ON %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
-      EraseRestOfTextLine(Arial_14);
+      EraseRestOfTextLine(y_start + TFT_STATE_OFFSET_Y, Arial_14);
 
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
       tft.printf("C:%d", psensor->curValue());
-      EraseRestOfTextLine(Arial_14);
+      EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
       send_remote_update = true;   // Lets send all on messages
       psensor->displayVal(0xffff);  // clear the remembered value...
       if (g_sd_detected) {
@@ -225,7 +228,7 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
       tft.printf("OFF %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
-      EraseRestOfTextLine(Arial_14);
+      EraseRestOfTextLine(y_start + TFT_STATE_OFFSET_Y, Arial_14);
 
       // lets update the display information maybe delta time
       tft.setFont(Arial_14);
@@ -237,7 +240,7 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       } else {
         tft.printf("OT: %d:%02d:%02d A:%d", hour(t), minute(t), second(t), psensor->avgValue());
       }
-      EraseRestOfTextLine(Arial_14);
+      EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
       send_remote_update = true;   // Lets send all on messages
       if (g_sd_detected) {
         File dataFile = SD.open("well_log.txt", FILE_WRITE);
@@ -257,9 +260,9 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
     tft.setFont(Arial_14);
     tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
     tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-    tft.printf("C:%d M:%d X:%d A:%d", psensor->curValue(),
+    tft.printf("C:%d R:%d-%d A:%d", psensor->curValue(),
                psensor->minValue(), psensor->maxValue(), psensor->avgValue());
-    EraseRestOfTextLine(Arial_14);
+    EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
     send_remote_update = true;   // Lets send all on messages
 
   }
