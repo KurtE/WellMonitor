@@ -175,6 +175,11 @@ void loop() {
   // Process touch screen
   ProcessTouchScreen();
   digitalWriteFast(4, LOW);
+
+  if (Serial.available()) {
+    while (Serial.read() != -1) ; // get rid of everything.
+    CurrentSensor::show_sensor_data = !CurrentSensor::show_sensor_data;
+  }
 }
 
 time_t getTeensy3Time()

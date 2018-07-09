@@ -14,7 +14,7 @@
 #include <ili9341_t3n_font_ArialBold.h>
 #include <Adafruit_NeoPixel.h>
 #include <XPT2046_Touchscreen.h>
-
+#include <SD.h>
 //====================================================================================
 // globals
 //====================================================================================
@@ -183,6 +183,7 @@ void EraseRestOfTextLine(const ILI9341_t3_font_t &f) {
 // UpdateDisplaySensorData - Update Sensor data
 //====================================================================================
 #define SENSOR_ON (SENSOR_UPDATE_ON_BOOT_DETECTED | SENSOR_UPDATE_ON_DETECTED)
+// Maybe should move this somewhere else???
 bool UpdateDisplaySensorData(uint8_t iSensor) {
   CurrentSensor *psensor = g_Sensors[iSensor];
 
@@ -210,6 +211,15 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       EraseRestOfTextLine(Arial_14);
       send_remote_update = true;   // Lets send all on messages
       psensor->displayVal(0xffff);  // clear the remembered value...
+      if (g_sd_detected) {
+        File dataFile = SD.open("well_log.txt", FILE_WRITE);
+        if (dataFile) {
+          dataFile.printf("%d:ON %d/%d/%d %d:%02d:%02d\r\n", iSensor, month(t), day(t), year(t) % 100, 
+              hour(t), minute(t), second(t));
+          dataFile.close();
+        }
+      }
+    
     } else {
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
@@ -229,7 +239,18 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       }
       EraseRestOfTextLine(Arial_14);
       send_remote_update = true;   // Lets send all on messages
-
+      if (g_sd_detected) {
+        File dataFile = SD.open("well_log.txt", FILE_WRITE);
+        if (dataFile) {
+          dataFile.printf("%d:OFF %d/%d/%d %d:%02d:%02d", iSensor, month(t), day(t), year(t) % 100, hour(t), minute(t), second(t));
+          if (elapsedDays(t)) {
+            dataFile.printf("==> OT: %dD %d:%02d A:%d\r\n", elapsedDays(t), hour(t), minute(t), psensor->avgValue());
+          } else {
+            dataFile.printf("==> OT: %d:%02d:%02d A:%d\r\n", hour(t), minute(t), second(t), psensor->avgValue());
+          }
+          dataFile.close();
+        }
+      }
     }
   } else if (psensor->state() && (psensor->curValue() != psensor->displayVal())) {
     psensor->displayVal(psensor->curValue());

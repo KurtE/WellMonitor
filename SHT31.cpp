@@ -85,7 +85,7 @@ boolean Adafruit_SHT31::completeReadTempHum(void) {
     return false;
   for (uint8_t i=0; i<6; i++) {
     readbuffer[i] = Wire.read();
-  //  Serial.print("0x"); Serial.println(readbuffer[i], HEX);
+    //Serial.print("0x"); Serial.println(readbuffer[i], HEX);
   }
   uint16_t ST, SRH;
   ST = readbuffer[0];
@@ -100,14 +100,14 @@ boolean Adafruit_SHT31::completeReadTempHum(void) {
 
   if (readbuffer[5] != crc8(readbuffer+3, 2)) return false;
 
- // Serial.print("ST = "); Serial.println(ST);
+  //Serial.print("ST = "); Serial.println(ST);
   double stemp = ST;
   stemp *= 175;
   stemp /= 0xffff;
   stemp = -45 + stemp;
   _temp = stemp;
   
-//  Serial.print("SRH = "); Serial.println(SRH);
+  //Serial.print("SRH = "); Serial.println(SRH);
   double shum = SRH;
   shum *= 100;
   shum /= 0xFFFF;
