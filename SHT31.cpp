@@ -13,6 +13,8 @@
   Written by Limor Fried/Ladyada for Adafruit Industries.  
   BSD license, all text above must be included in any redistribution
  ****************************************************/
+#ifdef ENABLE_SHT31
+
 #define I2C_T3_TIMEOUT 5000
 
 #include "SHT31.h"
@@ -176,4 +178,5 @@ uint8_t Adafruit_SHT31::crc8(const uint8_t *data, int len)
 }
 
 /*********************************************************************/
+#endif //ENABLE_SHT31
 

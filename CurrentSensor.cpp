@@ -18,8 +18,8 @@ CurrentSensor Sensor4(SENSOR4_PIN, ADC_1);
 CurrentSensor *g_Sensors[] = {&Sensor1, &Sensor2, &Sensor3, &Sensor4};
 #define CNT_SENSORS (sizeof(g_Sensors)/sizeof(g_Sensors[0]))
 const uint8_t g_sensors_cnt = CNT_SENSORS;
-volatile uint8_t CurrentSensor::any_sensor_changed = 0; 
-volatile uint8_t CurrentSensor::sensor_scan_state = 0;    // Should we do scanning.  0 - no, 1 - start, 2 running... 
+volatile uint8_t CurrentSensor::any_sensor_changed = 0;
+volatile uint8_t CurrentSensor::sensor_scan_state = 0;    // Should we do scanning.  0 - no, 1 - start, 2 running...
 volatile bool CurrentSensor::show_sensor_data = false;    // default don't show data
 DMAChannel  CurrentSensor::_adc0_dma;                     // Dma channel for ADC0
 DMAChannel   CurrentSensor::_adc1_dma;                    // DMA Channel for ADC1
@@ -50,9 +50,9 @@ void CurrentSensor::initSensors(void)
   // EEPROM data. - Maybe multiple sections
   // Beginning have some default settings for Avg off and deadband.
   // May have another section which keeps last on/off times.
-  if (!g_master_node){ 
+  if (!g_master_node) {
     // Slave mode does not need this yet
-    return; 
+    return;
   }
 
   for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
@@ -60,7 +60,7 @@ void CurrentSensor::initSensors(void)
   }
 
   // Lets init the ADC library
-  // Note: we are going to use DMA and PDB to do the timing for us... 
+  // Note: we are going to use DMA and PDB to do the timing for us...
   adc->setAveraging(4); // set number of averages
   adc->setResolution(12); // set bits of resolution
   adc->setConversionSpeed(ADC_CONVERSION_SPEED::MED_SPEED); // change the conversion speed
@@ -70,7 +70,7 @@ void CurrentSensor::initSensors(void)
   adc->setConversionSpeed(ADC_CONVERSION_SPEED::MED_SPEED, ADC_1); // change the conversion speed
   adc->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED, ADC_1); // change the sampling speed
 
- // Lets setup Analog 0 dma
+  // Lets setup Analog 0 dma
   _adc0_dma.source((volatile uint16_t&)ADC0_RA);
   //_adc0_dma.destinationBuffer(_adc0_buf, sizeof(_adc0_buf));
   _adc0_dma.triggerAtHardwareEvent (DMAMUX_SOURCE_ADC0);
@@ -84,18 +84,46 @@ void CurrentSensor::initSensors(void)
   _adc1_dma.triggerAtHardwareEvent (DMAMUX_SOURCE_ADC1);
   _adc1_dma.disableOnCompletion();
 
-  // Not sure I will need this, will simply setup 
+  // Not sure I will need this, will simply setup
   _adc0_dma.interruptAtCompletion();
   _adc0_dma.attachInterrupt(&adc0_dma_isr);
   _adc1_dma.interruptAtCompletion();
   _adc1_dma.attachInterrupt(&adc1_dma_isr);
 
 
-  pinMode(13, OUTPUT);
   pinMode(1, OUTPUT);
   // Start interval timer to take care of updating the sensor.
-  sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval 
+  sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval
+#ifdef SENSORS_USE_INTERVAL_TIMER
   timer.begin(IntervalTimerProc, CYCLE_TIME_US);
+#else
+  // need to prime it.
+  IntervalTimerProc();
+#endif
+}
+
+//==========================================================================
+// checkSensors - We will call off to read in the currents of each
+// of our sensors.
+//==========================================================================
+elapsedMillis time_since_sensors_processed; 
+bool CurrentSensor::checkSensors() {
+  if (!g_master_node) return false;   // we are not master so don't do anything.
+
+  // Now call the interval timer if we are not
+#ifndef SENSORS_USE_INTERVAL_TIMER
+  // Set some form of timeout, to make sure 
+  // the system did not hang for some reason. Should not take a second let alone a few seconds
+    if (time_since_sensors_processed < 5000) {
+    if (_adc0_busy || _adc1_busy) return false; // still busy
+  } else {
+    Serial.println("Sensor timeout?");
+  }
+
+  IntervalTimerProc();
+  time_since_sensors_processed = 0;
+#endif
+  return (CurrentSensor::any_sensor_changed);
 }
 
 //==========================================================================
@@ -105,10 +133,10 @@ void CurrentSensor::initSensors(void)
 uint16_t CurrentSensor::_interval_counter; // only need 1 bit but should work fine.
 void CurrentSensor::IntervalTimerProc ()
 {
-  // We are now doing the analog reads unblocking. 
-  // We have two ADC units, so can only have two 
+  // We are now doing the analog reads unblocking.
+  // We have two ADC units, so can only have two
   // sensors doing analog reads per cycle  Sensors 0,1 and 2,3 should work
-  // See if we are in a stopped state. 
+  // See if we are in a stopped state.
 
   bool completion_state = false;
   if (_interval_counter & 1) {
@@ -122,7 +150,7 @@ void CurrentSensor::IntervalTimerProc ()
     g_Sensors[0]->startAnalogRead();
     g_Sensors[1]->startAnalogRead();
   }
-  _interval_counter++;  // 
+  _interval_counter++;  //
 
   // Actually now start the DMA/PDB...
   // The actual calls above set buffer and pin...
@@ -159,7 +187,7 @@ void CurrentSensor::init()
 
   _cur_value = 0;
   _display_state = 0;
-}  
+}
 
 //==========================================================================
 // state - set the state to some new state.
@@ -191,7 +219,7 @@ void CurrentSensor::startAnalogRead(void)                    // Update - do anal
 {
 
   if (_adc_num == 0) {
-    // Each has their own buffer. 
+    // Each has their own buffer.
     _adc0_dma.destinationBuffer(_adc_buf, sizeof(_adc_buf));
     adc->adc0->startSingleRead(_pin);
 
@@ -213,12 +241,12 @@ bool CurrentSensor::completeAnalogRead(void)                    // Update - do a
   }
   _analog_read_started = 0;
 
-  // See if we are calibrating 
+  // See if we are calibrating
   uint16_t min_value = 0xffff;
   uint16_t max_value = 0;
 
   if (_calibrating) {
-    // Probably could get lots more fancy here... 
+    // Probably could get lots more fancy here...
     uint32_t sum_values = 0;
     for (int i = 0; i < CurrentSensor::ADC_BUFFER_SIZE; i++) {
       if (_adc_buf[i] > max_value) max_value = _adc_buf[i];
@@ -279,7 +307,7 @@ bool CurrentSensor::completeAnalogRead(void)                    // Update - do a
         _min_value = _cur_value;
       _sum_values += _cur_value;
       _cnt_values++;
-  
+
     }
   } else {
     _cur_value = dt_avg;

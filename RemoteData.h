@@ -34,8 +34,11 @@ enum {
 //====================================================================================
 extern void InitRemoteRadio();
 extern uint32_t ProcessRemoteMessages();
+#ifdef USE_RADIOHEAD_DATAGRAM
 extern void  SendRemoteTempHumidityMsg();
 extern void	SendRemotePing(bool startup_msg);
 extern void SendRemoteSensorData(uint8_t sensor_index);
-
+#else
+extern void sendRemoteState();
+#endif
 #endif

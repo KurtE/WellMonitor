@@ -6,6 +6,12 @@
 #include "SHT31.h"
 
 //====================================================================================
+// Options
+//====================================================================================
+//#define ENABLE_SHT31
+//#define SENSORS_USE_INTERVAL_TIMER
+
+//====================================================================================
 // Pin Numbers. 
 //====================================================================================
 #define TFT_RST -1
@@ -58,13 +64,16 @@
 //====================================================================================
 // Current g_Sensors.   
 //====================================================================================
-#define MIN_CURRENT_ON     100   // Min value to report. 
+#define MIN_CURRENT_ON     25   // Min value to report. 
 
 //====================================================================================
 // Global variables
 //====================================================================================
+#ifdef ENABLE_SHT31
 extern Adafruit_SHT31 sht31;
-extern bool g_sht31_detected; 	// Does this unit have an sht31? 
+extern bool g_sht31_detected;   // Does this unit have an sht31? 
+#endif //ENABLE_SHT31
+
 extern bool g_sd_detected;      // did we detect an sd card?
 extern uint8_t g_master_node;
 

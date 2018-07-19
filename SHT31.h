@@ -13,6 +13,7 @@
   Written by Limor Fried/Ladyada for Adafruit Industries.  
   BSD license, all text above must be included in any redistribution
  ****************************************************/
+#ifdef ENABLE_SHT31
 #ifndef _SHT31_H
 #define _SHT31_H
 
@@ -66,3 +67,5 @@ class Adafruit_SHT31 {
 };
 
 #endif
+#endif //ENABLE_SHT31
+

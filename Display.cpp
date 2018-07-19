@@ -89,6 +89,7 @@ void InitTFTDisplay(void)
 //====================================================================================
 void ReadTempHumiditySensor()
 {
+#ifdef ENABLE_SHT31
   if (!g_sht31_detected) {
     return; // no SHT31 detected.
   }
@@ -116,6 +117,7 @@ void ReadTempHumiditySensor()
   // Tell system that next call should start new read...
   digitalWriteFast(9, LOW);
   sht31_read_started = false;
+#endif
 }
 
 //====================================================================================
@@ -123,8 +125,8 @@ void ReadTempHumiditySensor()
 //====================================================================================
 bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data)
 {
+#ifdef ENABLE_SHT31
   bool fChanged = false;
-
   // Pass 1 if data is local display or if remote and no loacl display
   if (!local_data && g_sht31_detected)
     return false; //
@@ -147,6 +149,9 @@ bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data)
     fChanged = true;
   }
   return fChanged && local_data;
+#else
+  return false;
+#endif  
 }
 
 //====================================================================================
@@ -215,9 +220,9 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       send_remote_update = true;   // Lets send all on messages
       psensor->displayVal(0xffff);  // clear the remembered value...
       if (g_sd_detected) {
-        File dataFile = SD.open("well_log.txt", FILE_WRITE);
+        File dataFile = SD.open("well_log.csv", FILE_WRITE);
         if (dataFile) {
-          dataFile.printf("%d:ON %d/%d/%d %d:%02d:%02d\r\n", iSensor, month(t), day(t), year(t) % 100, 
+          dataFile.printf("%d,ON,%d/%d/%d %d:%02d:%02d\r\n", iSensor, month(t), day(t), year(t) % 100, 
               hour(t), minute(t), second(t));
           dataFile.close();
         }
@@ -234,22 +239,22 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       tft.setFont(Arial_14);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-      t -= ton;   // We have the number of seconds that the sensor was on.
-      if (elapsedDays(t)) {
-        tft.printf("OT: %dD %d:%02d A:%d", elapsedDays(t), hour(t), minute(t), psensor->avgValue());
+      time_t delta_t = t - ton;
+      if (elapsedDays(delta_t)) {
+        tft.printf("OT: %dD %d:%02d A:%d", elapsedDays(delta_t), hour(delta_t), minute(delta_t), psensor->avgValue());
       } else {
-        tft.printf("OT: %d:%02d:%02d A:%d", hour(t), minute(t), second(t), psensor->avgValue());
+        tft.printf("OT: %d:%02d:%02d A:%d", hour(delta_t), minute(delta_t), second(delta_t), psensor->avgValue());
       }
       EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
       send_remote_update = true;   // Lets send all on messages
       if (g_sd_detected) {
-        File dataFile = SD.open("well_log.txt", FILE_WRITE);
+        File dataFile = SD.open("well_log.csv", FILE_WRITE);
         if (dataFile) {
-          dataFile.printf("%d:OFF %d/%d/%d %d:%02d:%02d", iSensor, month(t), day(t), year(t) % 100, hour(t), minute(t), second(t));
-          if (elapsedDays(t)) {
-            dataFile.printf("==> OT: %dD %d:%02d A:%d\r\n", elapsedDays(t), hour(t), minute(t), psensor->avgValue());
+          dataFile.printf("%d,OFF,,%d/%d/%d %d:%02d:%02d", iSensor, month(t), day(t), year(t) % 100, hour(t), minute(t), second(t));
+          if (elapsedDays(delta_t)) {
+            dataFile.printf(",%d,%dD %d:%02d A:%d\r\n", delta_t, elapsedDays(delta_t), hour(delta_t), minute(delta_t), psensor->avgValue());
           } else {
-            dataFile.printf("==> OT: %d:%02d:%02d A:%d\r\n", hour(t), minute(t), second(t), psensor->avgValue());
+            dataFile.printf(",%d,%d:%02d:%02d A:%d\r\n", delta_t, hour(delta_t), minute(delta_t), second(delta_t), psensor->avgValue());
           }
           dataFile.close();
         }
@@ -260,9 +265,12 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
     tft.setFont(Arial_14);
     tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
     tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
+    tft.setClipRect(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y, tft.width(), Arial_14.line_space);
+ 
     tft.printf("C:%d R:%d-%d A:%d", psensor->curValue(),
                psensor->minValue(), psensor->maxValue(), psensor->avgValue());
     EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
+    tft.setClipRect();
     send_remote_update = true;   // Lets send all on messages
 
   }
