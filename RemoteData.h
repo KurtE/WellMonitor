@@ -23,10 +23,8 @@
 #define RECV_MAX_TIME_BEFORE
 
 enum {
-	WM_MSG_ID_STARTUP,	// Tell the other side we just started up... 
-	WM_MSG_ID_PING,		// Ping message - with our RTC time
-	WM_MSG_ID_TEMP_HUM,	// Temp/Humidity messages
-	WM_MSG_ID_SENSOR_DATA
+  WM_MSG_ID_SENSOR_DATA,
+	WM_MSG_ID_ACK  // Send an ACK to the other side...
 };
 
 //====================================================================================
@@ -34,11 +32,7 @@ enum {
 //====================================================================================
 extern void InitRemoteRadio();
 extern uint32_t ProcessRemoteMessages();
-#ifdef USE_RADIOHEAD_DATAGRAM
-extern void  SendRemoteTempHumidityMsg();
-extern void	SendRemotePing(bool startup_msg);
-extern void SendRemoteSensorData(uint8_t sensor_index);
-#else
+extern void UpdateSystemTimeWithRemoteTime(time_t t);  // in Main INO file
 extern void sendRemoteState();
-#endif
+
 #endif

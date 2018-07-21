@@ -127,6 +127,20 @@ bool CurrentSensor::checkSensors() {
 }
 
 //==========================================================================
+// checkSensors - We will call off to read in the currents of each
+// of our sensors.
+//==========================================================================
+void CurrentSensor::updateStartTimes(uint32_t dt) {
+  for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
+    // See if sensor is active.
+    if (g_Sensors[iSensor]->state() != SENSOR_STATE_OFF) {
+      // lets try to update the on time
+      g_Sensors[iSensor]->onTime(g_Sensors[iSensor]->onTime() + dt);
+    }
+  }
+}
+
+//==========================================================================
 // IntervalTimerProc - We will call off to read in the currents of each
 // of our sensors.
 //==========================================================================

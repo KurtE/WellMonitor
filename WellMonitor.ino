@@ -212,9 +212,9 @@ void loop() {
     while (Serial.read() != -1) ; // get rid of everything.
     CurrentSensor::show_sensor_data = !CurrentSensor::show_sensor_data;
   }
-  uint32_t loop_time = millis()-start_time;
+  uint32_t loop_time = millis() - start_time;
   if (loop_time < 5) {
-    delay(5-loop_time);
+    delay(5 - loop_time);
   }
 }
 
@@ -222,3 +222,31 @@ time_t getTeensy3Time()
 {
   return Teensy3Clock.get();
 }
+
+// Update the system time...
+void UpdateSystemTimeWithRemoteTime(time_t t) {  // in Main INO file
+  time_t tnow = now();
+  if ((timeStatus() == timeNotSet) || (tnow < t)) {
+    uint32_t dt = (uint32_t)(t - tnow);
+    if (dt > 10) {
+      if (Serial)
+        Serial.printf("Update time %x %x\n", tnow, t);
+      Teensy3Clock.set(t);
+      setTime(t);
+      uint32_t dt = (uint32_t)(t - tnow);
+  
+      if (g_sd_detected) {
+        File dataFile = SD.open("well_log.csv", FILE_WRITE);
+        if (dataFile) {
+          dataFile.printf("-1,CLOCK,%d/%d/%d %d:%02d:%02d,%d/%d/%d %d:%02d:%02d,%d\r\n",
+                          month(tnow), day(tnow), year(tnow) % 100, hour(tnow), minute(tnow), second(tnow),
+                          month(t), day(t), year(t) % 100, hour(t), minute(t), second(t),
+                          dt);
+          dataFile.close();
+        }
+      }
+      CurrentSensor::updateStartTimes(dt);
+    }
+  }
+}
+

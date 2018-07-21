@@ -54,6 +54,7 @@ class CurrentSensor {
     static void initSensors(void);            // Move all of our init stuff into member function here.
 
     static bool checkSensors(void);           // 
+    static void updateStartTimes(uint32_t dt); // update start times if sensor is active
     static void IntervalTimerProc (void);
     static void adc0_dma_isr(void);
     static void adc1_dma_isr(void);
