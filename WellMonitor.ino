@@ -32,6 +32,8 @@
 #define MIN_DELTA_TO_REPORT 2
 int last_val = -332767;    // setup to some value that we wont ever see
 bool g_sd_detected = false;      // did we detect an sd card?
+bool g_debug_output = false;    // show debug output?
+uint32_t g_oled_color_sensors = 0;  // not on...
 
 
 
@@ -47,10 +49,9 @@ elapsedMillis time_to_update_time_temp;
 uint8_t cur_sensor_index = 0;
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
 
-#define UPDATE_LED_TIME_MS  5000
-elapsedMillis time_to_update_led;
-static uint32_t led_colors[4] = {strip.Color(16, 0, 0), strip.Color(0, 16, 0), strip.Color(0, 0, 16), strip.Color(0, 0, 0)};
-uint8_t led_color_index = 0;
+#define UPDATE_LOOP_STATUS_MS  5000
+elapsedMillis time_to_show_loop_status;
+uint8_t loop_status_index = 0;
 
 #ifdef ENABLE_SHT31
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
@@ -67,9 +68,9 @@ void setup() {
   // Use an IO pin to signal if we are the master or slave.
   pinMode(MASTER_SLAVE, INPUT_PULLDOWN);  // Now using PD as 3.3v next pin over
 
-
-  while (!Serial && (millis() < 5000)) ;
+  while (!Serial && (millis() < 3000)) ;
   Serial.begin(115200);
+
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
@@ -84,27 +85,39 @@ void setup() {
   delay(125);
   strip.setPixelColor(0, strip.Color(0, 0, 0));
   strip.show();
-  time_to_update_led = 0;
+  time_to_show_loop_status = 0;
 
+  if (Serial) {
+    delay(1000);
+    // Quick test to see if we have anything
+    if (Serial.read() != -1) {
+      g_debug_output = true;
+      Serial.println("Startup Debug output ON");
+    }
+    while (Serial.read() != -1) ;
+  }
   g_master_node = digitalRead(MASTER_SLAVE) ? 0 : 1;
 
-  if (g_master_node) {
-    Serial.println("Master Node");
-  } else {
-    Serial.println("Slave Node");
+  // Let a couple of prints through...
+  if (g_debug_output){
+    if (g_master_node) {
+      Serial.println("Master Node");
+    } else {
+      Serial.println("Slave Node");
+    }
   }
 
   if (!(g_sd_detected = SD.begin(BUILTIN_SDCARD))) {
-    Serial.println("SDCard failed to init");
+    if (g_debug_output) Serial.println("SDCard failed to init");
   }
 
   InitTFTDisplay();
 
   // Lets init the time
   if (timeStatus() != timeSet) {
-    Serial.println("Unable to sync with the RTC");
+    if (g_debug_output) Serial.println("Unable to sync with the RTC");
   } else {
-    Serial.println("RTC has set the system time");
+    if (g_debug_output) Serial.println("RTC has set the system time");
   }
   //
   if (g_master_node && g_sd_detected) {
@@ -140,14 +153,10 @@ void setup() {
   }
 #endif
   if (g_master_node) {
-    Serial.println("Master: Before Init Sensors");
+    if (g_debug_output) Serial.println("Master: Before Init Sensors");
     CurrentSensor::initSensors();
   }
 
-  // Let the other side know we are here
-#ifdef USE_RADIOHEAD_DATAGRAM
-  SendRemotePing(true);
-#endif
   // Debug
   pinMode(0, OUTPUT);
   pinMode(1, OUTPUT);
@@ -167,31 +176,34 @@ void loop() {
   // We simple look for it to signal us.
   bool sensors_changed = CurrentSensor::checkSensors();
   sensors_changed |= ProcessRemoteMessages();
-
+  DisplayCenterPoints();
   if (sensors_changed) {
-    Serial.println("==>Loop Sensor changed");
+    if (g_debug_output) Serial.println("==>Loop Sensor changed");
     digitalWriteFast(0, HIGH);
     CurrentSensor::any_sensor_changed = 0;  // clear it out
 
     // update the displayed data.
     for (uint8_t sensor_index = 0; sensor_index < g_sensors_cnt; sensor_index++) {
       if (UpdateDisplaySensorData(sensor_index)) {
-#ifdef USE_RADIOHEAD_DATAGRAM
-        if (g_master_node) {
-          SendRemoteSensorData(sensor_index);  // Tell other side we have updated information.
-        }
-#endif
       }
     }
-
-
     digitalWriteFast(0, LOW);
     CurrentSensor::sensor_scan_state = SENSOR_SCAN_START; // tell the scan to sart up again.
+
+    // See if we should update our color LED to show state of sensors
+    uint8_t sstate = CurrentSensor::sensorsOn();
+    uint32_t oled_color = strip.Color((sstate & 1)? 16 : 0, (sstate & 2)? 16 : 0, (sstate & 4)? 16 : 0);
+
+    if (oled_color != g_oled_color_sensors) {
+      strip.setPixelColor(0, oled_color);
+      strip.show();
+      g_oled_color_sensors = oled_color;
+    }
+    
   }
   // If we are master maybe send status update to remtoe
-#ifndef USE_RADIOHEAD_DATAGRAM
   sendRemoteState();
-#endif
+
   if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
     ReadTempHumiditySensor();
     UpdateDisplayDateTime();
@@ -202,15 +214,25 @@ void loop() {
   ProcessTouchScreen();
   digitalWriteFast(4, LOW);
 
-  if (time_to_update_led > UPDATE_LED_TIME_MS) {
-    strip.setPixelColor(0, led_colors[led_color_index++ & 0x3]);
-    strip.show();
-    time_to_update_led = 0;
+  if (time_to_show_loop_status > UPDATE_LOOP_STATUS_MS) {
+    ShowLoopStatus(loop_status_index++);
+    time_to_show_loop_status = 0;
   }
 
   if (Serial.available()) {
+    uint8_t cmd = Serial.read();
+    switch (cmd) {
+      case 's':
+      case 'S':
+        CurrentSensor::show_sensor_data = !CurrentSensor::show_sensor_data;
+        break;
+      default:
+        g_debug_output = !g_debug_output;
+        if (g_debug_output) Serial.println("Debug output ON");
+        else                Serial.println("Debug output OFF");
+        break;
+    }
     while (Serial.read() != -1) ; // get rid of everything.
-    CurrentSensor::show_sensor_data = !CurrentSensor::show_sensor_data;
   }
   uint32_t loop_time = millis() - start_time;
   if (loop_time < 5) {
@@ -234,7 +256,7 @@ void UpdateSystemTimeWithRemoteTime(time_t t) {  // in Main INO file
       Teensy3Clock.set(t);
       setTime(t);
       uint32_t dt = (uint32_t)(t - tnow);
-  
+
       if (g_sd_detected) {
         File dataFile = SD.open("well_log.csv", FILE_WRITE);
         if (dataFile) {

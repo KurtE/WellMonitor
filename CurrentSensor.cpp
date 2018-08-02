@@ -41,6 +41,7 @@ typedef struct _well_monitor_eeprom_data {
   uint16_t    deadbands[CNT_SENSORS];                      // what we think the deadband is
 } WELL_MONITOR_EEPROM_DATA;
 
+elapsedMillis time_since_sensors_processed; 
 
 //==========================================================================
 // Static - Class level methods
@@ -93,25 +94,20 @@ void CurrentSensor::initSensors(void)
 
   pinMode(1, OUTPUT);
   // Start interval timer to take care of updating the sensor.
+  time_since_sensors_processed = 0;
   sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval
-#ifdef SENSORS_USE_INTERVAL_TIMER
-  timer.begin(IntervalTimerProc, CYCLE_TIME_US);
-#else
   // need to prime it.
-  IntervalTimerProc();
-#endif
+  updateSensorsProc();
 }
 
 //==========================================================================
 // checkSensors - We will call off to read in the currents of each
 // of our sensors.
 //==========================================================================
-elapsedMillis time_since_sensors_processed; 
 bool CurrentSensor::checkSensors() {
   if (!g_master_node) return false;   // we are not master so don't do anything.
 
   // Now call the interval timer if we are not
-#ifndef SENSORS_USE_INTERVAL_TIMER
   // Set some form of timeout, to make sure 
   // the system did not hang for some reason. Should not take a second let alone a few seconds
     if (time_since_sensors_processed < 5000) {
@@ -120,9 +116,8 @@ bool CurrentSensor::checkSensors() {
     Serial.println("Sensor timeout?");
   }
 
-  IntervalTimerProc();
+  updateSensorsProc();
   time_since_sensors_processed = 0;
-#endif
   return (CurrentSensor::any_sensor_changed);
 }
 
@@ -141,11 +136,29 @@ void CurrentSensor::updateStartTimes(uint32_t dt) {
 }
 
 //==========================================================================
-// IntervalTimerProc - We will call off to read in the currents of each
+// sensorsOn: helper function to let me know which if any sensors is currently ON 
+//==========================================================================
+uint8_t CurrentSensor::sensorsOn (void)          // returns a bit mask of which sensors are on 
+{
+  uint8_t sensors_on_mask = 1;
+  uint8_t sensors_on = 0;
+  
+  for (uint8_t iSensor = 0; iSensor < CNT_SENSORS; iSensor++) {
+    // See if sensor is active.
+    if (g_Sensors[iSensor]->state() != SENSOR_STATE_OFF) {
+      sensors_on |= sensors_on_mask;
+    }
+    sensors_on_mask <<= 1;
+  }
+  return sensors_on;
+}
+
+//==========================================================================
+// updateSensorsProc - We will call off to read in the currents of each
 // of our sensors.
 //==========================================================================
 uint16_t CurrentSensor::_interval_counter; // only need 1 bit but should work fine.
-void CurrentSensor::IntervalTimerProc ()
+void CurrentSensor::updateSensorsProc ()
 {
   // We are now doing the analog reads unblocking.
   // We have two ADC units, so can only have two
@@ -179,13 +192,13 @@ void CurrentSensor::IntervalTimerProc ()
   adc->adc0->startPDB(60 * 50);
   adc->adc1->startPDB(60 * 50);
 
-  //Serial.println();
   if (completion_state) {
     CurrentSensor::any_sensor_changed = 1;
     //Serial.println("** IPTC **");
     digitalWrite(13, !digitalRead(13));
   }
 }
+
 
 //==========================================================================
 // Init
@@ -197,7 +210,7 @@ void CurrentSensor::init()
   _min_on_value = MIN_CURRENT_ON;
   _state = SENSOR_STATE_OFF;
   _analog_read_started = 0;
-  _calibrating = true;
+  _calibrating = CALIBRATE_BEGIN;
 
   _cur_value = 0;
   _display_state = 0;
@@ -210,7 +223,7 @@ void CurrentSensor::state(uint8_t s)
 {
   if (_state != s) {
     _state = s;  // save away the new state;
-    Serial.printf("Pin: %d Set State %d\n", _pin, s);
+    if (g_debug_output) Serial.printf("Pin: %d Set State %d\n", _pin, s);
     if (_state) {
       // We are logically turning on so init some of the counters and the like.
       onTime(now());
@@ -258,22 +271,27 @@ bool CurrentSensor::completeAnalogRead(void)                    // Update - do a
   // See if we are calibrating
   uint16_t min_value = 0xffff;
   uint16_t max_value = 0;
+  uint32_t sum_values = 0;
 
-  if (_calibrating) {
+  if (_calibrating == CALIBRATE_BEGIN) {
     // Probably could get lots more fancy here...
-    uint32_t sum_values = 0;
     for (int i = 0; i < CurrentSensor::ADC_BUFFER_SIZE; i++) {
       if (_adc_buf[i] > max_value) max_value = _adc_buf[i];
       if (_adc_buf[i] < min_value) min_value = _adc_buf[i];
       sum_values += _adc_buf[i];
-      Serial.printf("%4u ", _adc_buf[i]);
-      if ((i % 20) == 19) Serial.println();
+      if (g_debug_output) {
+        Serial.printf("%4u ", _adc_buf[i]);
+        if ((i % 20) == 19) Serial.println();
+      }
     }
     _analog_center_point = sum_values / CurrentSensor::ADC_BUFFER_SIZE;
 
-    Serial.printf("Calibrating(%d) %d <= %d <= %d\n", _pin, min_value, _analog_center_point, max_value);
+    if (g_debug_output)Serial.printf("Calibrating(%d) %d <= %d <= %d\n", _pin, min_value, _analog_center_point, max_value);
 
-    _calibrating = false;
+    // The value should be approx 2050, if < 1500, probably something wrong, lets try again.
+//    if (_analog_center_point > 1500) {
+      _calibrating = CALIBRATE_DONE_DISPLAY;
+//    }
     return false;
   }
 
@@ -281,18 +299,36 @@ bool CurrentSensor::completeAnalogRead(void)                    // Update - do a
   if (CurrentSensor::show_sensor_data) {
     Serial.printf("\nCurrent Sensor pin:%d ADC:%d\n", _pin, _adc_num);
   }
-  for (int i = 0; i < CurrentSensor::ADC_BUFFER_SIZE; i++) {
-    if (_adc_buf[i] > max_value) max_value = _adc_buf[i];
-    if (_adc_buf[i] < min_value) min_value = _adc_buf[i];
-
-    int delta_from_center = (int)_adc_buf[i] - _analog_center_point;
-    sum_deltas_sq += delta_from_center * delta_from_center;
-    if (CurrentSensor::show_sensor_data) {
-      Serial.printf("%4u ", _adc_buf[i]);
-      if ((i % 20) == 19) Serial.println();
+  bool data_valid = false;
+  do {
+    for (int i = 0; i < CurrentSensor::ADC_BUFFER_SIZE; i++) {
+      if (_adc_buf[i] > max_value) max_value = _adc_buf[i];
+      if (_adc_buf[i] < min_value) min_value = _adc_buf[i];
+  
+      sum_values += _adc_buf[i];  // lets verify our center point is valid...
+      int delta_from_center = (int)_adc_buf[i] - _analog_center_point;
+      sum_deltas_sq += delta_from_center * delta_from_center;
+      if (CurrentSensor::show_sensor_data) {
+        Serial.printf("%4u ", _adc_buf[i]);
+        if ((i % 20) == 19) Serial.println();
+      }
     }
-  }
-
+    // Again double check center_point
+    sum_values /= CurrentSensor::ADC_BUFFER_SIZE;
+    int center_delta = abs ((int)sum_values - (int)_analog_center_point);
+    if (center_delta > DELTA_CENTER_MAX){
+      data_valid = false;
+      _analog_center_point = sum_values;
+      if (g_debug_output)Serial.printf("update Calibrating(%d) %d\n", _pin, _analog_center_point);
+      _calibrating = CALIBRATE_DONE_DISPLAY; // let caller know it changed..
+      sum_values = 0; // reset to try again
+      sum_deltas_sq =  0; // 
+    } else {
+      data_valid = true;
+    }
+    
+  } while (!data_valid) ;
+  
   uint32_t dt_avg = sqrtf(sum_deltas_sq / CurrentSensor::ADC_BUFFER_SIZE);
   if (CurrentSensor::show_sensor_data) {
     Serial.printf("Min: %d Max: %d dt: %d\n", min_value, max_value, dt_avg);

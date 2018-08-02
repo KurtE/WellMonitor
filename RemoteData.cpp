@@ -74,7 +74,7 @@ void InitRemoteRadio()
 {
   // Init the radio/Manager on the board - probably move to own function later
   // First init the SPI to use the alternate pin numbers
-  Serial.println("Init Remote Radio");
+  if (g_debug_output) Serial.println("Init Remote Radio");
   SPI1.setMISO(RFM95_MISO);
   SPI1.setMOSI(RFM95_MOSI);
   SPI1.setSCK(RFM95_SCK);
@@ -89,7 +89,7 @@ void InitRemoteRadio()
 
   // Our address depends on if Master or not
   if (!g_master_node) {
-    Serial.printf(" setThisAddress %x\n", WM_SLAVE_NODE);
+    if (g_debug_output) Serial.printf(" setThisAddress %x\n", WM_SLAVE_NODE);
     manager.setThisAddress(WM_SLAVE_NODE );
   }
   if (!manager.init()) {
@@ -99,11 +99,12 @@ void InitRemoteRadio()
       Serial.println("RF95: setFrequency failed");
     } else
       rf95.setTxPower(23, false);
-    Serial.println("Completed InitRadio\n");
-
+    if (g_debug_output) Serial.println("Completed InitRadio\n");
   }
-  rf95.printRegisters();
-  Serial.printf("Our Address: %x\n", manager.thisAddress());
+  if (g_debug_output) {
+    rf95.printRegisters();
+    Serial.printf("Our Address: %x\n", manager.thisAddress());
+  }
 
 }
 elapsedMillis time_since_last_report;
@@ -138,7 +139,7 @@ void sendRemoteState() {
   bool sent = manager.sendto((uint8_t *)&msg, sizeof(msg), g_other_radio_id);
   bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/4 second?
   digitalWriteFast(9, LOW);
-  if (Serial) {
+  if (g_debug_output) {
     Serial.printf("SRSD(%d %d %d %d): %d %d %d %d\n", avail, sent, wait_completed, millis() - stime, msg.states[0], msg.states[1], msg.states[2],
                   msg.states[3]);
   }
@@ -159,7 +160,7 @@ void  SendRemoteAck(uint16_t packet_num) {
   bool avail = manager.available();
   bool sent = manager.sendto((uint8_t *)&msg, sizeof(msg), g_other_radio_id);
   bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/4 second?
-  if (Serial) {
+  if (g_debug_output) {
     Serial.printf("SRACK(%d %d %d): %d %d\n", avail, sent, wait_completed, g_other_radio_id, packet_num);
   }
 }
@@ -186,7 +187,7 @@ uint32_t ProcessRemoteMessages()
     uint8_t id;
     if (manager.recvfrom ((uint8_t*)&msg_buf, &len, &g_other_radio_id, &to, &id)) {
       time_since_last_msg_received = 0;  // zero out timer of how long since last message.
-      if (Serial)
+      if (g_debug_output)
         Serial.printf("PRM: f:%u id:%d l: %u\n", g_other_radio_id, id, len);
 
       // See if we maybe should update clock?
@@ -196,22 +197,26 @@ uint32_t ProcessRemoteMessages()
       if (msg_buf.msg.message_type == WM_MSG_ID_SENSOR_DATA) {
         // Lets see if we have any new updated data...
         for (int sensor_index = 0; sensor_index < 4; sensor_index++) {
-          if (Serial)
+          if (g_debug_output) {
             Serial.printf("PRSM % d % d % d\n", sensor_index, msg_buf.msg.states[sensor_index], msg_buf.msg.curValues[sensor_index]);
+          }
           if (msg_buf.msg.states[sensor_index] != g_Sensors[sensor_index]->state()) {
             g_Sensors[sensor_index]->state(msg_buf.msg.states[sensor_index]);
             retval = 1;
           }
           if (msg_buf.msg.curValues[sensor_index] != g_Sensors[sensor_index]->curValue()) {
             g_Sensors[sensor_index]->curValue(msg_buf.msg.curValues[sensor_index]);
+            
             retval = 1;
           }
           if (msg_buf.msg.onTimes[sensor_index] != g_Sensors[sensor_index]->onTime()) {
             g_Sensors[sensor_index]->onTime(msg_buf.msg.onTimes[sensor_index]);
+            g_Sensors[sensor_index]->displayState(SENSOR_STATE_CHANGED);
             retval = 1;
           }
           if (msg_buf.msg.offTimes[sensor_index] != g_Sensors[sensor_index]->offTime()) {
             g_Sensors[sensor_index]->offTime(msg_buf.msg.offTimes[sensor_index]);
+            g_Sensors[sensor_index]->displayState(SENSOR_STATE_CHANGED);
             retval = 1;
           }
           // Assume these won't change without one of the other items changing...

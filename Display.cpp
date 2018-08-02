@@ -20,12 +20,13 @@
 //====================================================================================
 XPT2046_Touchscreen ts(TFT_TCS, TFT_TIRQ);
 ILI9341_t3n tft = ILI9341_t3n(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO);
-uint16_t g_current_temp = 0;
-uint16_t g_current_humidity = 0;
+uint16_t  g_current_temp = 0;
+uint16_t  g_current_humidity = 0;
 
-int     g_display_min = 99;   // some bogus value
-uint32_t g_tft_backlight_timer; // When was the last time the touch screen was touched.
-uint16_t g_backlight_value = 0; // what is the current backlight 0-255
+int       g_display_min = 99;   // some bogus value
+int16_t   g_display_date_last_x = 0;   // remember date end of output from last write
+uint32_t  g_tft_backlight_timer; // When was the last time the touch screen was touched.
+uint16_t  g_backlight_value = 0; // what is the current backlight 0-255
 
 static const uint16_t SENSOR_Y_STARTS[] = {TFT_WELL1_Y, TFT_WELL2_Y, TFT_PRESURE_Y, TFT_HEATER_Y};
 
@@ -54,7 +55,7 @@ void InitTFTDisplay(void)
   tft.print("Hum:");
 
   // Display Headers for the wells and the like
-  tft.setFont(Arial_20);
+  tft.setFont(Arial_16);
   tft.setTextColor(ILI9341_YELLOW);
 
   tft.setCursor(TFT_TITLES_X, TFT_WELL1_Y);
@@ -161,6 +162,7 @@ bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data)
 void UpdateDisplayDateTime() {
   time_t tnow = now();
   if (minute(tnow) != g_display_min) {
+    int16_t x, y;
     g_display_min = minute(tnow);
 
     tft.setFont(Arial_14);
@@ -168,7 +170,11 @@ void UpdateDisplayDateTime() {
     tft.setCursor(TFT_TIME_X, TFT_TIMETEMP_Y);
     tft.printf("%s %d %d %d:%02d", monthShortStr(month(tnow)), day(tnow), year(tnow) % 100,
                hour(tnow), minute(tnow));
-
+    tft.getCursor(&x, &y);
+    if (x < g_display_date_last_x) {
+      tft.fillRect(x, y, g_display_date_last_x - x, Arial_14.line_space, ILI9341_BLACK);
+    }
+    g_display_date_last_x = x;
   }
 
 }
@@ -185,6 +191,37 @@ void EraseRestOfTextLine(int16_t y_text, const ILI9341_t3_font_t &f) {
   if (y == y_text) {
     tft.fillRect(x, y, tft.width(), f.line_space, ILI9341_BLACK); // width will be truncated.
   }
+}
+
+//====================================================================================
+// DisplayCenterPoints - Debug information for sensors
+//====================================================================================
+void DisplayCenterPoints() {
+  if (!g_master_node) return; // only do on master
+
+  for (uint8_t iSensor = 0; iSensor < g_sensors_cnt; iSensor++) {
+    CurrentSensor *psensor = g_Sensors[iSensor];
+    if (psensor->calibrating() == CurrentSensor::CALIBRATE_DONE_DISPLAY) {
+      uint16_t cp = psensor->centerPoint();
+      uint16_t y_start = SENSOR_Y_STARTS[iSensor];
+      psensor->calibrating(CurrentSensor::CALIBRATE_DONE);
+      tft.setFont(Arial_10);
+      tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+      tft.setCursor(4, y_start + TFT_STATE_ROW2_OFFSET_Y);
+      tft.printf("%d", cp);
+    }
+  }
+}
+
+//====================================================================================
+// ShowLoopStatus - Updates every so often to let know program is not hung
+//====================================================================================
+void ShowLoopStatus(uint8_t loop_status_count) 
+{
+  tft.setTextColor((loop_status_count & 1)?ILI9341_WHITE : ILI9341_BLACK, ILI9341_BLACK);
+  tft.setFont(Arial_10);
+  tft.setCursor(2, 225);  //
+  tft.print("*");
 }
 
 //====================================================================================
@@ -229,17 +266,20 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       }
     
     } else {
-      tft.setFont(Arial_14);
+      tft.setFont(Arial_12);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
       tft.printf("OFF %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
+
+      time_t delta_t = t - ton;
+      tft.printf(" DT: %d:%02d:%02d", hour(delta_t), minute(delta_t), second(delta_t));
+
       EraseRestOfTextLine(y_start + TFT_STATE_OFFSET_Y, Arial_14);
 
       // lets update the display information maybe delta time
-      tft.setFont(Arial_14);
+      tft.setFont(Arial_12);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_ROW2_OFFSET_Y);
-      time_t delta_t = t - ton;
       if (elapsedDays(delta_t)) {
         tft.printf("OT: %dD %d:%02d A:%d", elapsedDays(delta_t), hour(delta_t), minute(delta_t), psensor->avgValue());
       } else {
@@ -336,7 +376,7 @@ bool ProcessTouchScreen()
     if ((x != x_prev) || (y != y_prev)) {
       x_prev = x;
       y_prev = y;
-      Serial.printf("PTS Raw: %d, %d Out: %d, %d\n", g_pt.x, g_pt.y, x, y);
+      if (g_debug_output)Serial.printf("PTS Raw: %d, %d Out: %d, %d\n", g_pt.x, g_pt.y, x, y);
     }
   }
   g_tft_backlight_timer = millis(); // remember last time touched.

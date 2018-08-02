@@ -27,7 +27,7 @@
 #define TFT_PRESURE_Y         130
 #define TFT_HEATER_Y          180
 
-#define TFT_STATE_X           90
+#define TFT_STATE_X           65
 #define TFT_STATE_OFFSET_Y      4
 #define TFT_STATE_ROW2_OFFSET_Y 24
 
@@ -55,7 +55,8 @@ extern bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data
 extern bool UpdateDisplaySensorData(uint8_t iSensor);
 extern bool ProcessTouchScreen();
 extern bool GetTouchPoint(int16_t *px, int16_t *py);
-
+extern void DisplayCenterPoints();
+extern void ShowLoopStatus(uint8_t loop_status_count);
 extern void SetFullTFTBacklight();
 
 //====================================================================================

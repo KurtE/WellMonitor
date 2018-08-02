@@ -76,5 +76,6 @@ extern bool g_sht31_detected;   // Does this unit have an sht31?
 
 extern bool g_sd_detected;      // did we detect an sd card?
 extern uint8_t g_master_node;
+extern bool g_debug_output;
 
 #endif
