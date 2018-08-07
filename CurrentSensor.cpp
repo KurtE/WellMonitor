@@ -21,6 +21,7 @@ const uint8_t g_sensors_cnt = CNT_SENSORS;
 volatile uint8_t CurrentSensor::any_sensor_changed = 0;
 volatile uint8_t CurrentSensor::sensor_scan_state = 0;    // Should we do scanning.  0 - no, 1 - start, 2 running...
 volatile bool CurrentSensor::show_sensor_data = false;    // default don't show data
+volatile uint8_t   CurrentSensor::sensor_timeout_count = 0; // How many timeouts have we had?
 DMAChannel  CurrentSensor::_adc0_dma;                     // Dma channel for ADC0
 DMAChannel   CurrentSensor::_adc1_dma;                    // DMA Channel for ADC1
 bool  CurrentSensor::_adc0_busy = false;                  // Is ADC0 busy?
@@ -29,6 +30,7 @@ bool  CurrentSensor::_adc1_busy = false;                  // Is ADC1 busy?
 //volatile DMAMEM uint16_t CurrentSensor::_adc1_buf[ADC_BUFFER_SIZE]; // buffer 1...
 
 IntervalTimer CurrentSensor::timer;                       // An interval timer to use with this
+time_t    CurrentSensor::_todays_midnight;                // What time was midnight today?
 ADC *adc = new ADC(); // adc object
 
 
@@ -60,6 +62,23 @@ void CurrentSensor::initSensors(void)
     g_Sensors[iSensor]->init();
   }
 
+  // Call of to init the ADC and DMA
+  init_ADC_and_DMA();
+
+  pinMode(1, OUTPUT);
+  // Start interval timer to take care of updating the sensor.
+  time_since_sensors_processed = 0;
+  sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval
+  // need to prime it.
+  updateSensorsProc();
+}
+
+
+//==========================================================================
+// Static - Class level methods
+//==========================================================================
+void CurrentSensor::init_ADC_and_DMA(void)
+{
   // Lets init the ADC library
   // Note: we are going to use DMA and PDB to do the timing for us...
   adc->setAveraging(4); // set number of averages
@@ -90,30 +109,42 @@ void CurrentSensor::initSensors(void)
   _adc0_dma.attachInterrupt(&adc0_dma_isr);
   _adc1_dma.interruptAtCompletion();
   _adc1_dma.attachInterrupt(&adc1_dma_isr);
-
-
-  pinMode(1, OUTPUT);
-  // Start interval timer to take care of updating the sensor.
-  time_since_sensors_processed = 0;
-  sensor_scan_state = SENSOR_SCAN_START;  // Tell inteval
-  // need to prime it.
-  updateSensorsProc();
 }
+
+
 
 //==========================================================================
 // checkSensors - We will call off to read in the currents of each
 // of our sensors.
 //==========================================================================
+uint32_t g_last_timeout_msg_time = 0;
+#define TIME_BETWEEN_TIMEOUT_MSGS 1000    // Maybe once a second... 
 bool CurrentSensor::checkSensors() {
   if (!g_master_node) return false;   // we are not master so don't do anything.
 
   // Now call the interval timer if we are not
   // Set some form of timeout, to make sure 
   // the system did not hang for some reason. Should not take a second let alone a few seconds
-    if (time_since_sensors_processed < 5000) {
+  if (time_since_sensors_processed < 5000) {
     if (_adc0_busy || _adc1_busy) return false; // still busy
   } else {
-    Serial.println("Sensor timeout?");
+    sensor_timeout_count++;
+    if ((millis()-g_last_timeout_msg_time) > TIME_BETWEEN_TIMEOUT_MSGS) {
+      Serial.println("Sensor timeout?");
+      ShowStatusMessage(ERROR_LEVEL_ERROR, "Sensor timeout %d", sensor_timeout_count, true);
+      g_last_timeout_msg_time = millis();
+
+      // If sill not working after the first display... Try resetting ADC? 
+      // Maybe try to restart the ADC and DMA?
+      if (sensor_timeout_count > 5) {
+        init_ADC_and_DMA();
+      }
+    }
+  }
+
+  if ((_adc0_busy == 0) && (_adc1_busy == 0) && sensor_timeout_count) {
+    ShowStatusMessage(ERROR_LEVEL_NONE, "", 0, true);
+
   }
 
   updateSensorsProc();

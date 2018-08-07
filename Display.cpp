@@ -88,11 +88,11 @@ void InitTFTDisplay(void)
 //====================================================================================
 // ReadTempHumiditySensor - Update the displays Data/Time
 //====================================================================================
-void ReadTempHumiditySensor()
+uint32_t ReadTempHumiditySensor()
 {
 #ifdef ENABLE_SHT31
   if (!g_sht31_detected) {
-    return; // no SHT31 detected.
+    return 0xffffffff; // no SHT31 detected. probably won't call again...
   }
   pinMode(9, OUTPUT);
   static boolean sht31_read_started = false;  // sort of piece of ...
@@ -101,23 +101,26 @@ void ReadTempHumiditySensor()
   if (!sht31_read_started) {
     if (sht31.beginReadTempHum())
       sht31_read_started = true;
-    return;
+    return TEMP_READ_TIME_MILLIS;
   }
 
   digitalWriteFast(9, HIGH);
   if (sht31.completeReadTempHum()) {
     float t = sht31.temperature();
     float h = sht31.humidity();
-    uint16_t tint = (uint16_t)(t * 1.8 + 32.0);
+    uint16_t tint = (uint16_t)t;
     uint16_t hint = (uint16_t)h;
     if (UpdateTempHumidity(tint, hint, true)) {
       // We updated temp and/or humidity. so send message
-      SendRemoteTempHumidityMsg();
+      //SendRemoteTempHumidityMsg();
     }
   }
   // Tell system that next call should start new read...
   digitalWriteFast(9, LOW);
   sht31_read_started = false;
+  return UPDATE_TIME_TEMP_MILLIS;
+#else
+  return 0xffffffff; // no SHT31 detected. probably won't call again...
 #endif
 }
 
@@ -159,8 +162,9 @@ bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data)
 // UpdateDisplayTime - Update the displays Data/Time
 //====================================================================================
 
-void UpdateDisplayDateTime() {
+bool UpdateDisplayDateTime() {
   time_t tnow = now();
+  bool date_changed = false;
   if (minute(tnow) != g_display_min) {
     int16_t x, y;
     g_display_min = minute(tnow);
@@ -175,8 +179,14 @@ void UpdateDisplayDateTime() {
       tft.fillRect(x, y, g_display_date_last_x - x, Arial_14.line_space, ILI9341_BLACK);
     }
     g_display_date_last_x = x;
-  }
 
+    // See if the date has changed
+    if (previousMidnight(tnow) != CurrentSensor::todaysStartTime()) {
+      CurrentSensor::todaysStartTime(previousMidnight(tnow)); // update our start timer time
+      date_changed = true;
+    }
+  }
+  return date_changed;
 }
 
 
@@ -225,20 +235,59 @@ void ShowLoopStatus(uint8_t loop_status_count)
 }
 
 //====================================================================================
+// ShowStatusMessage - Display a status message 
+//====================================================================================
+void ShowStatusMessage(uint8_t error_level, const char *psz, uint32_t val, bool send_remote) {
+  switch (error_level) {
+    case ERROR_LEVEL_NONE:
+    default:
+    case ERROR_LEVEL_INFO: tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK); break;
+    case ERROR_LEVEL_WARN: tft.setTextColor(ILI9341_YELLOW, ILI9341_BLACK); break;
+    case ERROR_LEVEL_ERROR: tft.setTextColor(ILI9341_RED, ILI9341_BLACK); break;
+  }
+  tft.setFont(Arial_10);
+  tft.setCursor(TFT_ERROR_X, TFT_ERROR_Y);  
+  if (psz) tft.printf(psz, val);
+
+  EraseRestOfTextLine(TFT_ERROR_Y, Arial_10);
+
+  if (send_remote) {
+    sendRemoteStatusMsg(error_level, psz, val);
+  }
+}
+
+//====================================================================================
+// GenerateDisplayTime
+//====================================================================================
+void GenerateDisplayTime(time_t t, char *pstr) {
+  time_t midnight = previousMidnight(t);
+
+  if (t > midnight) {
+    sprintf(pstr, "Today %d:%02d", hour(t), minute(t));
+  } else if (t > (midnight - SECS_PER_DAY)) {
+    sprintf(pstr, "Yesterday %d:%02d", hour(t), minute(t));
+  } else {
+    sprintf(pstr, "%d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
+  }
+}
+//====================================================================================
 // UpdateDisplaySensorData - Update Sensor data
 //====================================================================================
-#define SENSOR_ON (SENSOR_UPDATE_ON_BOOT_DETECTED | SENSOR_UPDATE_ON_DETECTED)
 // Maybe should move this somewhere else???
-bool UpdateDisplaySensorData(uint8_t iSensor) {
+bool UpdateDisplaySensorData(uint8_t iSensor, bool date_changed) {
   CurrentSensor *psensor = g_Sensors[iSensor];
 
   uint16_t y_start = SENSOR_Y_STARTS[iSensor];
   bool send_remote_update = false;
   time_t t = psensor->offTime();
   time_t ton = psensor->onTime();
+  char date_time_str[32];
   //Serial.printf("*** UDSD *** %d %d %d %d %d\n", iSensor, psensor->state(), psensor->displayState(),
   //              psensor->curValue(), psensor->displayVal());
-  if (psensor->state() != psensor->displayState()) {
+  // If the state changed or date changed, than redraw most everything. 
+  // currently this is slightly off as 2nd line in on condition has other data... 
+  // But this is in process of being reorganized. 
+  if ((psensor->state() != psensor->displayState()) || date_changed) {
     psensor->displayState(psensor->state());
     if (psensor->state()) {
       // We have a logical On condition and if there was on off it was before the on, so show on.
@@ -246,7 +295,8 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
       time_t t = psensor->onTime();
-      tft.printf("ON %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
+      GenerateDisplayTime(t, date_time_str);
+      tft.printf("ON %s", date_time_str);
       EraseRestOfTextLine(y_start + TFT_STATE_OFFSET_Y, Arial_14);
 
       tft.setFont(Arial_14);
@@ -256,20 +306,15 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
       send_remote_update = true;   // Lets send all on messages
       psensor->displayVal(0xffff);  // clear the remembered value...
-      if (g_sd_detected) {
-        File dataFile = SD.open("well_log.csv", FILE_WRITE);
-        if (dataFile) {
-          dataFile.printf("%d,ON,%d/%d/%d %d:%02d:%02d\r\n", iSensor, month(t), day(t), year(t) % 100, 
-              hour(t), minute(t), second(t));
-          dataFile.close();
-        }
-      }
+
+      EventList::LogEvent(EventList::SENSOR_ON, iSensor, t, 0, 0);
     
     } else {
       tft.setFont(Arial_12);
       tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
       tft.setCursor(TFT_STATE_X, y_start + TFT_STATE_OFFSET_Y);
-      tft.printf("OFF %d/%d/%d %d:%02d", month(t), day(t), year(t) % 100, hour(t), minute(t));
+      GenerateDisplayTime(t, date_time_str);
+      tft.printf("OFF %s", date_time_str);
 
       time_t delta_t = t - ton;
       tft.printf(" DT: %d:%02d:%02d", hour(delta_t), minute(delta_t), second(delta_t));
@@ -287,18 +332,7 @@ bool UpdateDisplaySensorData(uint8_t iSensor) {
       }
       EraseRestOfTextLine(y_start + TFT_STATE_ROW2_OFFSET_Y, Arial_14);
       send_remote_update = true;   // Lets send all on messages
-      if (g_sd_detected) {
-        File dataFile = SD.open("well_log.csv", FILE_WRITE);
-        if (dataFile) {
-          dataFile.printf("%d,OFF,,%d/%d/%d %d:%02d:%02d", iSensor, month(t), day(t), year(t) % 100, hour(t), minute(t), second(t));
-          if (elapsedDays(delta_t)) {
-            dataFile.printf(",%d,%dD %d:%02d A:%d\r\n", delta_t, elapsedDays(delta_t), hour(delta_t), minute(delta_t), psensor->avgValue());
-          } else {
-            dataFile.printf(",%d,%d:%02d:%02d A:%d\r\n", delta_t, hour(delta_t), minute(delta_t), second(delta_t), psensor->avgValue());
-          }
-          dataFile.close();
-        }
-      }
+      EventList::LogEvent(EventList::SENSOR_OFF, iSensor, t, ton, delta_t);
     }
   } else if (psensor->state() && (psensor->curValue() != psensor->displayVal())) {
     psensor->displayVal(psensor->curValue());

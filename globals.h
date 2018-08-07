@@ -3,13 +3,15 @@
 //====================================================================================
 #ifndef __globals_h__
 #define __globals_h__
-#include "SHT31.h"
 
+#include "EventList.h"
 //====================================================================================
 // Options
 //====================================================================================
-//#define ENABLE_SHT31
+#define ENABLE_SHT31
 //#define SENSORS_USE_INTERVAL_TIMER
+
+#include "SHT31.h"
 
 //====================================================================================
 // Pin Numbers. 
@@ -24,6 +26,7 @@
 #define TFT_MISO      12    // SPI MISO
 #define TFT_SCK       14    // SPI SCK
 #define TFT_CS        15    // TFT CS
+#define SHT31_ALR_PIN 16	// Alarm pin for SHT31
 #define NEOPIXEL_PIN  17    // NeoPixel pin
 #define RFM95_SCK     20    // SPI 1 SCK
 #define RFM95_MOSI    21    // SPI 1 MOSI used for RFM95
@@ -64,7 +67,7 @@
 //====================================================================================
 // Current g_Sensors.   
 //====================================================================================
-#define MIN_CURRENT_ON     25   // Min value to report. 
+#define MIN_CURRENT_ON     100   // Min value to report. 
 
 //====================================================================================
 // Global variables

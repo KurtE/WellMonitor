@@ -13,17 +13,21 @@
   Written by Limor Fried/Ladyada for Adafruit Industries.  
   BSD license, all text above must be included in any redistribution
  ****************************************************/
-#ifdef ENABLE_SHT31
 
 #define I2C_T3_TIMEOUT 5000
 
+#include "globals.h"
 #include "SHT31.h"
+#ifdef ENABLE_SHT31
 
 Adafruit_SHT31::Adafruit_SHT31() {
 }
 
 
 boolean Adafruit_SHT31::begin(uint8_t i2caddr) {
+  #ifdef SHT31_ALR_PIN
+  pinMode(SHT31_ALR_PIN, INPUT);
+  #endif
   Wire.begin();
 #ifdef USE_I2C_T3
   Wire.setDefaultTimeout(I2C_T3_TIMEOUT);
@@ -104,9 +108,9 @@ boolean Adafruit_SHT31::completeReadTempHum(void) {
 
   //Serial.print("ST = "); Serial.println(ST);
   double stemp = ST;
-  stemp *= 175;
+  stemp *= 315;
   stemp /= 0xffff;
-  stemp = -45 + stemp;
+  stemp = -49 + stemp;
   _temp = stemp;
   
   //Serial.print("SRH = "); Serial.println(SRH);

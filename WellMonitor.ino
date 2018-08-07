@@ -34,7 +34,8 @@ int last_val = -332767;    // setup to some value that we wont ever see
 bool g_sd_detected = false;      // did we detect an sd card?
 bool g_debug_output = false;    // show debug output?
 uint32_t g_oled_color_sensors = 0;  // not on...
-
+uint32_t g_delay_next_temp_update = UPDATE_TIME_TEMP_MILLIS;
+bool g_date_time_changed = false;
 
 
 //====================================================================================
@@ -49,7 +50,7 @@ elapsedMillis time_to_update_time_temp;
 uint8_t cur_sensor_index = 0;
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
 
-#define UPDATE_LOOP_STATUS_MS  5000
+#define UPDATE_LOOP_STATUS_MS  2000
 elapsedMillis time_to_show_loop_status;
 uint8_t loop_status_index = 0;
 
@@ -120,15 +121,9 @@ void setup() {
     if (g_debug_output) Serial.println("RTC has set the system time");
   }
   //
-  if (g_master_node && g_sd_detected) {
-    File dataFile = SD.open("well_log.csv", FILE_WRITE);
-    if (dataFile) {
-      time_t t = now();
-      dataFile.printf("-1,RESET,%d/%d/%d %d:%02d:%02d\r\n", month(t), day(t), year(t) % 100,
-                      hour(t), minute(t), second(t));
-      dataFile.close();
-    }
-  }
+  CurrentSensor::todaysStartTime(previousMidnight(now())); // update our start timer time
+
+  EventList::LogEvent(EventList::STARTUP, -1, now(), 0, 0);
 
   InitRemoteRadio();
 
@@ -172,19 +167,29 @@ void setup() {
 void loop() {
   uint32_t start_time = millis();
   digitalWriteFast(4, HIGH);
+  bool date_changed = g_date_time_changed;    // Did a remote message update our date/time?
+  g_date_time_changed = false;
+  // every so often check to see if we should update the date/time as well as temp
+  if (time_to_update_time_temp >= g_delay_next_temp_update) {
+    g_delay_next_temp_update = ReadTempHumiditySensor();
+    date_changed = UpdateDisplayDateTime();
+    time_to_update_time_temp = 0;
+
+  }
+
   // We now have the Interval timer doing most of the sensor work.
   // We simple look for it to signal us.
   bool sensors_changed = CurrentSensor::checkSensors();
   sensors_changed |= ProcessRemoteMessages();
   DisplayCenterPoints();
-  if (sensors_changed) {
+  if (sensors_changed || date_changed) {
     if (g_debug_output) Serial.println("==>Loop Sensor changed");
     digitalWriteFast(0, HIGH);
     CurrentSensor::any_sensor_changed = 0;  // clear it out
 
     // update the displayed data.
     for (uint8_t sensor_index = 0; sensor_index < g_sensors_cnt; sensor_index++) {
-      if (UpdateDisplaySensorData(sensor_index)) {
+      if (UpdateDisplaySensorData(sensor_index, date_changed)) {
       }
     }
     digitalWriteFast(0, LOW);
@@ -201,15 +206,9 @@ void loop() {
     }
     
   }
-  // If we are master maybe send status update to remtoe
+  // If we are master maybe send status update to remote
   sendRemoteState();
 
-  if (time_to_update_time_temp >= UPDATE_TIME_TEMP_MILLIS) {
-    ReadTempHumiditySensor();
-    UpdateDisplayDateTime();
-    time_to_update_time_temp = 0;
-
-  }
   // Process touch screen
   ProcessTouchScreen();
   digitalWriteFast(4, LOW);
@@ -256,16 +255,11 @@ void UpdateSystemTimeWithRemoteTime(time_t t) {  // in Main INO file
       Teensy3Clock.set(t);
       setTime(t);
       uint32_t dt = (uint32_t)(t - tnow);
-
-      if (g_sd_detected) {
-        File dataFile = SD.open("well_log.csv", FILE_WRITE);
-        if (dataFile) {
-          dataFile.printf("-1,CLOCK,%d/%d/%d %d:%02d:%02d,%d/%d/%d %d:%02d:%02d,%d\r\n",
-                          month(tnow), day(tnow), year(tnow) % 100, hour(tnow), minute(tnow), second(tnow),
-                          month(t), day(t), year(t) % 100, hour(t), minute(t), second(t),
-                          dt);
-          dataFile.close();
-        }
+      
+      EventList::LogEvent(EventList::TIME_CHANGE, -1, tnow, t, dt);
+      if (previousMidnight(t) != CurrentSensor::todaysStartTime()) {
+        CurrentSensor::todaysStartTime(previousMidnight(t)); // update our start timer time
+        g_date_time_changed = true;
       }
       CurrentSensor::updateStartTimes(dt);
     }

@@ -23,8 +23,9 @@
 #define RECV_MAX_TIME_BEFORE
 
 enum {
-  WM_MSG_ID_SENSOR_DATA,
-	WM_MSG_ID_ACK  // Send an ACK to the other side...
+  WM_MSG_ID_SENSOR_DATA = 0,
+  WM_MSG_ID_MESSAGE,
+	WM_MSG_ID_ACK = 0xff  // Send an ACK to the other side...
 };
 
 //====================================================================================
@@ -34,5 +35,7 @@ extern void InitRemoteRadio();
 extern uint32_t ProcessRemoteMessages();
 extern void UpdateSystemTimeWithRemoteTime(time_t t);  // in Main INO file
 extern void sendRemoteState();
+extern void sendRemoteStatusMsg(uint8_t error_level, const char * str, uint32_t val);
+extern void  SendRemoteAck(uint16_t packet_num);
 
 #endif

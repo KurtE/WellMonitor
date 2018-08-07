@@ -7,6 +7,7 @@
 //====================================================================================
 // Includes
 //====================================================================================
+#include "globals.h"
 #include <elapsedMillis.h>
 #include <ADC.h>
 #include <DMAChannel.h>
@@ -54,20 +55,24 @@ class CurrentSensor {
     enum  { ADC_BUFFER_SIZE = 100, MIN_DELTA_ON = 10 };
     enum {CALIBRATE_BEGIN, CALIBRATE_DONE_DISPLAY, CALIBRATE_DONE};
     static void initSensors(void);            // Move all of our init stuff into member function here.
-
+    static void init_ADC_and_DMA(void);
     static bool checkSensors(void);           // 
     static void updateStartTimes(uint32_t dt); // update start times if sensor is active
     static void updateSensorsProc (void);
     static uint8_t sensorsOn (void);          // returns a bit mask of which sensors are on 
     static void adc0_dma_isr(void);
     static void adc1_dma_isr(void);
+    static time_t todaysStartTime() {return _todays_midnight;}
+    static void todaysStartTime(time_t t) {_todays_midnight = t;}
     
     // Global to call
     static volatile uint8_t   any_sensor_changed;
     static volatile bool      show_sensor_data;         // Show sensor data?
     static volatile uint8_t   sensor_scan_state;        // Should we do scanning.  0 - no, 1 - start, 2 running...
+    static volatile uint8_t   sensor_timeout_count;     // How many errors have we had?
     static IntervalTimer      timer;                    // An interval timer to use with this
     static uint16_t           _interval_counter;        // only need 1 bit but should work fine.
+    static time_t             _todays_midnight;         // What is linux time for midnight today...
 
     // Setup two DMA channels to use
     static  DMAChannel        _adc0_dma;                // Dma channel for ADC0

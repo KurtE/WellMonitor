@@ -31,7 +31,11 @@
 #define TFT_STATE_OFFSET_Y      4
 #define TFT_STATE_ROW2_OFFSET_Y 24
 
+#define TFT_ERROR_X           20
+#define TFT_ERROR_Y           225
+
 #define UPDATE_TIME_TEMP_MILLIS 500
+#define TEMP_READ_TIME_MILLIS 50
 
 // Bounds for touch . 
 
@@ -49,15 +53,19 @@ extern XPT2046_Touchscreen ts;
 // Screen layout and functions  
 //====================================================================================
 extern void InitTFTDisplay(void);
-extern void ReadTempHumiditySensor(void);
-extern void UpdateDisplayDateTime();
+extern uint32_t ReadTempHumiditySensor(void);
+extern bool UpdateDisplayDateTime();
 extern bool UpdateTempHumidity(uint16_t temp, uint16_t humidity, bool local_data);
-extern bool UpdateDisplaySensorData(uint8_t iSensor);
+extern bool UpdateDisplaySensorData(uint8_t iSensor, bool date_changed);
 extern bool ProcessTouchScreen();
 extern bool GetTouchPoint(int16_t *px, int16_t *py);
 extern void DisplayCenterPoints();
 extern void ShowLoopStatus(uint8_t loop_status_count);
 extern void SetFullTFTBacklight();
+
+enum {ERROR_LEVEL_NONE=0, ERROR_LEVEL_INFO, ERROR_LEVEL_WARN, ERROR_LEVEL_ERROR};
+
+extern void ShowStatusMessage(uint8_t error_level, const char *psz, uint32_t val, bool show_remote = false);
 
 //====================================================================================
 // Define our display objects. 

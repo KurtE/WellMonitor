@@ -26,7 +26,8 @@
 #include <RH_RF95.h>
 #include <RHHardwareSPI1.h>
 
-
+#define TIME_BETWEEN_REPORTS_MS 5000    // start of every 5 seconds...
+#define MAX_TIME_BETWEEN_RECV_MSG_MS 30000 // how about every 30 seconds?
 //====================================================================================
 // Structures
 //====================================================================================
@@ -44,6 +45,17 @@ typedef struct  _wm_state_msg {
   uint16_t   maxValues[4];  // Max values
   uint16_t   avgValues[4];  // Avg values
 } WM_STATE_MSG; // state message
+
+typedef struct _wm_message_msg {
+  uint16_t    message_type;
+  uint16_t    packet_num;    // current packet number
+  time_t time;
+
+  // Standard header
+  uint32_t    val;            // Optional value to display
+  uint8_t     error_level;    // what is the error level
+  char        str[32];      // max string
+} WM_MESSAGE_MSG;
 
 // Note actually simple header part of state msg above
 typedef struct  _wm_ack_msg {
@@ -109,15 +121,24 @@ void InitRemoteRadio()
 }
 elapsedMillis time_since_last_report;
 uint16_t state_packet_number = 0;
-#define TIME_BETWEEN_REPORTS_MS 5000    // start of every 5 seconds...
 
 //====================================================================================
 // SendRemoteState
 //====================================================================================
 void sendRemoteState() {
-  if (!g_master_node) return;   // only send if we are master
   if (time_since_last_msg_sent < TIME_BETWEEN_REPORTS_MS) return;
   time_since_last_msg_sent = 0;
+
+  if (!g_master_node) {
+    if (time_since_last_msg_received > MAX_TIME_BETWEEN_RECV_MSG_MS) {
+      SendRemoteAck(0xffff);
+      time_since_last_msg_received = 0;
+    }
+    if (g_debug_output) {
+      Serial.printf("SRS-Client RSSI: %d RX: %d %d TX: %d\n", rf95.lastRssi(), rf95.rxGood(), rf95.rxBad(), rf95.txGood());
+    }
+    return;   // only send if we are master
+  }
 
   WM_STATE_MSG msg;
   msg.message_type = WM_MSG_ID_SENSOR_DATA;
@@ -166,11 +187,37 @@ void  SendRemoteAck(uint16_t packet_num) {
 }
 
 //====================================================================================
+// SendRemoteStatusMsg - Let the other side display status message
+//====================================================================================
+void sendRemoteStatusMsg(uint8_t error_level, const char * str, uint32_t val) {
+  WM_MESSAGE_MSG msg;
+
+  msg.message_type = WM_MSG_ID_MESSAGE;
+  msg.packet_num =  state_packet_number++;
+  msg.time = now();
+
+  msg.val = val;
+  msg.error_level = error_level;
+
+  strncpy(msg.str, str, sizeof(msg.str)-1);
+  msg.str[sizeof(msg.str)-1] = 0; // make sure NULL terminated.
+  bool avail = manager.available();
+  bool sent = manager.sendto((uint8_t *)&msg, sizeof(msg), g_other_radio_id);
+  bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/4 second?
+  if (g_debug_output) {
+    Serial.printf("SRMSG(%d %d %d): %d %d\n", avail, sent, wait_completed, g_other_radio_id, msg.packet_num);
+  }
+
+}
+
+
+//====================================================================================
 // ProcessRemoteMessages
 //====================================================================================
 union {
-  WM_STATE_MSG msg;
-  uint8_t     buff[RH_RF95_MAX_MESSAGE_LEN];
+  WM_STATE_MSG    msg;
+  WM_MESSAGE_MSG  message_msg;   // A status message. 
+  uint8_t         buff[RH_RF95_MAX_MESSAGE_LEN];
 } msg_buf;
 
 uint32_t ProcessRemoteMessages()
@@ -224,6 +271,9 @@ uint32_t ProcessRemoteMessages()
           g_Sensors[sensor_index]->maxValue(msg_buf.msg.maxValues[sensor_index]);
           g_Sensors[sensor_index]->avgValue(msg_buf.msg.avgValues[sensor_index]);
         }
+        SendRemoteAck(msg_buf.msg.packet_num);
+      } else if (msg_buf.msg.message_type == WM_MSG_ID_MESSAGE) { // Status message received. 
+        ShowStatusMessage(msg_buf.message_msg.error_level, msg_buf.message_msg.str, msg_buf.message_msg.val, false);
         SendRemoteAck(msg_buf.msg.packet_num);
       }
     }
