@@ -137,6 +137,10 @@ bool CurrentSensor::checkSensors() {
       // If sill not working after the first display... Try resetting ADC? 
       // Maybe try to restart the ADC and DMA?
       if (sensor_timeout_count > 5) {
+        // Lets try to clear up DMA... Maybe emulate both ISRs being called and 
+        // call the init function again?
+        adc0_dma_isr();
+        adc1_dma_isr();
         init_ADC_and_DMA();
       }
     }
@@ -150,6 +154,16 @@ bool CurrentSensor::checkSensors() {
   updateSensorsProc();
   time_since_sensors_processed = 0;
   return (CurrentSensor::any_sensor_changed);
+}
+
+
+//==========================================================================
+// todaysStartTime
+//==========================================================================
+void CurrentSensor::todaysStartTime(time_t t) {
+  _todays_midnight = t;
+  Serial.printf("Set todaysStartTime %d: %s %d %d %d:%02d\n", t, monthShortStr(month(t)), day(t), year(t) % 100,
+             hour(t), minute(t));
 }
 
 //==========================================================================

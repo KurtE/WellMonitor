@@ -197,7 +197,7 @@ void loop() {
 
     // See if we should update our color LED to show state of sensors
     uint8_t sstate = CurrentSensor::sensorsOn();
-    uint32_t oled_color = strip.Color((sstate & 1)? 16 : 0, (sstate & 2)? 16 : 0, (sstate & 4)? 16 : 0);
+    uint32_t oled_color = strip.Color((sstate & 1)? OLED_SENSOR_ON_VAL : 0, (sstate & 2)? OLED_SENSOR_ON_VAL : 0, (sstate & 4)? OLED_SENSOR_ON_VAL : 0);
 
     if (oled_color != g_oled_color_sensors) {
       strip.setPixelColor(0, oled_color);

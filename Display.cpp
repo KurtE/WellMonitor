@@ -260,7 +260,7 @@ void ShowStatusMessage(uint8_t error_level, const char *psz, uint32_t val, bool 
 // GenerateDisplayTime
 //====================================================================================
 void GenerateDisplayTime(time_t t, char *pstr) {
-  time_t midnight = previousMidnight(t);
+  time_t midnight = CurrentSensor::todaysStartTime();
 
   if (t > midnight) {
     sprintf(pstr, "Today %d:%02d", hour(t), minute(t));

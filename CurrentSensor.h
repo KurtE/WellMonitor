@@ -63,7 +63,7 @@ class CurrentSensor {
     static void adc0_dma_isr(void);
     static void adc1_dma_isr(void);
     static time_t todaysStartTime() {return _todays_midnight;}
-    static void todaysStartTime(time_t t) {_todays_midnight = t;}
+    static void todaysStartTime(time_t t);
     
     // Global to call
     static volatile uint8_t   any_sensor_changed;
