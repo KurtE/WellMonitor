@@ -52,7 +52,7 @@ class CurrentSensor {
       _pin = analog_pin;
       _adc_num = adc_num;
     };
-    enum  { ADC_BUFFER_SIZE = 100, MIN_DELTA_ON = 10 };
+    enum  { ADC_BUFFER_SIZE = 100, MIN_DELTA_ON = 10, COUNT_SENSORS = 4 };
     enum {CALIBRATE_BEGIN, CALIBRATE_DONE_DISPLAY, CALIBRATE_DONE};
     static void initSensors(void);            // Move all of our init stuff into member function here.
     static void init_ADC_and_DMA(void);

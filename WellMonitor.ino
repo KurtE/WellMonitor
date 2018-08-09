@@ -123,6 +123,8 @@ void setup() {
   //
   CurrentSensor::todaysStartTime(previousMidnight(now())); // update our start timer time
 
+  EventList::restoreSensorData();
+  
   EventList::LogEvent(EventList::STARTUP, -1, now(), 0, 0);
 
   InitRemoteRadio();

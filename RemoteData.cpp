@@ -37,13 +37,13 @@ typedef struct  _wm_state_msg {
   uint16_t   message_type;  // Message type
   uint16_t   packet_num;    // current packet number
   time_t     time;          // current time
-  uint8_t    states[4];     // current state of each sensor
-  time_t     onTimes[4];    // last on time for sensor
-  time_t     offTimes[4];   // last off time for sensor
-  uint16_t   curValues[4];  // current values
-  uint16_t   minValues[4];  // minimum values
-  uint16_t   maxValues[4];  // Max values
-  uint16_t   avgValues[4];  // Avg values
+  uint8_t    states[CurrentSensor::COUNT_SENSORS];     // current state of each sensor
+  time_t     onTimes[CurrentSensor::COUNT_SENSORS];    // last on time for sensor
+  time_t     offTimes[CurrentSensor::COUNT_SENSORS];   // last off time for sensor
+  uint16_t   curValues[CurrentSensor::COUNT_SENSORS];  // current values
+  uint16_t   minValues[CurrentSensor::COUNT_SENSORS];  // minimum values
+  uint16_t   maxValues[CurrentSensor::COUNT_SENSORS];  // Max values
+  uint16_t   avgValues[CurrentSensor::COUNT_SENSORS];  // Avg values
 } WM_STATE_MSG; // state message
 
 typedef struct _wm_message_msg {
@@ -145,7 +145,7 @@ void sendRemoteState() {
   msg.packet_num =  state_packet_number++;
 
   msg.time = now();
-  for (int sensor_index = 0; sensor_index < 4; sensor_index++) {
+  for (int sensor_index = 0; sensor_index < CurrentSensor::COUNT_SENSORS; sensor_index++) {
     msg.states[sensor_index] = g_Sensors[sensor_index]->state();
     msg.curValues[sensor_index] =  g_Sensors[sensor_index]->curValue();
     msg.onTimes[sensor_index] = g_Sensors[sensor_index]->onTime();
@@ -158,7 +158,7 @@ void sendRemoteState() {
   uint32_t stime = millis();
   bool avail = manager.available();
   bool sent = manager.sendto((uint8_t *)&msg, sizeof(msg), g_other_radio_id);
-  bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/4 second?
+  bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/CurrentSensor::COUNT_SENSORS second?
   digitalWriteFast(9, LOW);
   if (g_debug_output) {
     Serial.printf("SRSD(%d %d %d %d): %d %d %d %d\n", avail, sent, wait_completed, millis() - stime, msg.states[0], msg.states[1], msg.states[2],
@@ -180,7 +180,7 @@ void  SendRemoteAck(uint16_t packet_num) {
 
   bool avail = manager.available();
   bool sent = manager.sendto((uint8_t *)&msg, sizeof(msg), g_other_radio_id);
-  bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/4 second?
+  bool wait_completed = manager.waitPacketSent(1000);   // wait up to 1/CurrentSensor::COUNT_SENSORS second?
   if (g_debug_output) {
     Serial.printf("SRACK(%d %d %d): %d %d\n", avail, sent, wait_completed, g_other_radio_id, packet_num);
   }
@@ -243,7 +243,7 @@ uint32_t ProcessRemoteMessages()
       // Lets see what the message is:
       if (msg_buf.msg.message_type == WM_MSG_ID_SENSOR_DATA) {
         // Lets see if we have any new updated data...
-        for (int sensor_index = 0; sensor_index < 4; sensor_index++) {
+        for (int sensor_index = 0; sensor_index < CurrentSensor::COUNT_SENSORS; sensor_index++) {
           if (g_debug_output) {
             Serial.printf("PRSM % d % d % d\n", sensor_index, msg_buf.msg.states[sensor_index], msg_buf.msg.curValues[sensor_index]);
           }
